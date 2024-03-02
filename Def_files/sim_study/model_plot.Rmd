@@ -1,0 +1,349 @@
+---
+title: "models"
+output: html_document
+date: "2023-10-11"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "D:/magistrale/tesi/Master_Thesis/Def_files/dati")
+```
+
+Read the dataset, create datasets for training and testing and import the omerf function and its methods
+
+```{r}
+library(ordinal)
+library(randomForest)
+library(ordinalForest)
+library(pdfCluster)
+library(psych)
+source('OMERF_new.R')
+source('build_dataset.R')
+source('ord_class_index.R')
+source('index.R')
+set.seed(1999)
+dati=build.dataset(1000,1,0.8)
+y=factor(dati$y.train)
+cov=dati$cov.train
+gr=factor(dati$group.train)
+cv2=NULL
+for(lv in 1:10) {
+  dummy=NULL
+  for(d in 1:length(gr)) dummy=c(dummy,ifelse(gr[d]==lv,1,0))
+  cv2=cbind(cv2,dummy)
+}
+colnames(cv2)=c('d1','d2','d3','d4','d5','d6','d7','d8','d9','d10')
+covd=cbind(cov,cv2)
+  
+# implement all 4 models
+clm.data=data.frame(covd,y)
+clm.mod=clm(y ~ x1+x2+x3+x4+x5+x6+x7+d2+d3+d4+d5+d6+d7+d8+d9+d10 , data=clm.data, link='logit') #d1: base case
+summary(clm.mod)
+for.data=data.frame(cov,y,gr)
+ordfor.mod=ordfor(depvar = 'y', perffunction = 'probability', for.data)
+ordfor.mod$varimp
+clmm.mod=clmm(y ~ x1+x2+x3+x4+x5+x6+x7+(1|gr), link='logit', data=for.data, Hess=TRUE, control=clmm.control(maxLineIter = 200, maxIter=500, grtol=1e-4))
+summary(clmm.mod)
+omerf.mod=omerf(y, cov, gr)
+summary.omerf(omerf.mod)
+  
+# test set
+y.t=factor(dati$y.test)
+cov.t=dati$cov.test
+gr.t=factor(dati$group.test)
+cv2=NULL
+for(lv in 1:10) {
+  dummy=NULL
+  for(d in 1:length(gr.t)) dummy=c(dummy,ifelse(gr.t[d]==lv,1,0))
+  cv2=cbind(cv2,dummy)
+}
+colnames(cv2)=c('d1','d2','d3','d4','d5','d6','d7','d8','d9','d10')
+cov.td=cbind(cov.t,cv2)
+test.data=data.frame(cov.td, gr.t)
+names(test.data)[dim(test.data)[2]]='gr'
+
+# perf measures
+results.acc=matrix(nrow=1, ncol=4, data=rep(0,4))
+results.mse=matrix(nrow=1, ncol=4, data=rep(0,4))
+results.oc=matrix(nrow=1, ncol=4, data=rep(0,4))
+results.ari=matrix(nrow=1, ncol=4, data=rep(0,4))
+results.ck=matrix(nrow=1, ncol=4, data=rep(0,4))
+results.newi=matrix(nrow=1, ncol=4, data=rep(0,4))
+colnames(results.acc)=c('clm', 'clmm','ordforest', 'omerf')
+colnames(results.mse)=c('clm', 'clmm','ordforest', 'omerf')
+colnames(results.oc)=c('clm', 'clmm','ordforest', 'omerf')
+colnames(results.ari)=c('clm', 'clmm','ordforest', 'omerf')
+colnames(results.ck)=c('clm', 'clmm','ordforest', 'omerf')
+colnames(results.newi)=c('clm', 'clmm','ordforest', 'omerf')
+  
+mu_clm_t=predict(clm.mod,test.data)$fit
+lev=levels(y)
+names(mu_clm_t) = lev
+
+y_clm_t <- as.numeric(names(mu_clm_t)[apply(mu_clm_t, 1, which.max)])
+y_test=as.numeric(y.t)
+results.acc[1,1]=sum(y_test==as.numeric(y_clm_t))/length(y_test)
+results.mse[1,1]=mean((y_test - as.numeric(y_clm_t))^2)
+cm.clm <- table(y_test, y_clm_t)
+num_classes_clm <- max(nrow(cm.clm), ncol(cm.clm))
+cm.clm2 <- matrix(0, nrow = num_classes_clm, ncol = num_classes_clm)
+rownames(cm.clm2) <- colnames(cm.clm2) <- lev
+cm.clm2[rownames(cm.clm), colnames(cm.clm)] <- cm.clm[rownames(cm.clm), colnames(cm.clm)]
+results.oc[1,1]=OrdinalClassificationIndex(cm.clm2, dim(cm.clm2)[1])
+results.ari[1,1]=adj.rand.index(y_test, as.numeric(y_clm_t))
+results.ck[1,1]=cohen.kappa(x=cbind(y_test,as.numeric(y_clm_t)))$kappa
+results.newi[1,1]=newindex(mu_clm_t,y_test,num_classes_clm)$norm.index
+
+
+mu_ord_t <- predict(ordfor.mod, newdata=test.data)$classprobs
+y_ord_t <- predict(ordfor.mod, newdata=test.data)$ypred
+results.acc[1,3]=sum(y_test==as.numeric(y_ord_t))/length(y_test)
+results.mse[1,3]=mean((y_test - as.numeric(y_ord_t))^2)
+cm.ordfor <- table(y_test, y_ord_t)
+num_classes_ordfor <- max(nrow(cm.ordfor), ncol(cm.ordfor))
+cm.ordfor2 <- matrix(0, nrow = num_classes_ordfor, ncol = num_classes_ordfor)
+rownames(cm.ordfor2) <- colnames(cm.ordfor2) <- lev
+cm.ordfor2[rownames(cm.ordfor), colnames(cm.ordfor)] <- cm.ordfor[rownames(cm.ordfor), colnames(cm.ordfor)]
+results.oc[1,3]=OrdinalClassificationIndex(cm.ordfor2, dim(cm.ordfor2)[1])
+results.ari[1,3]=adj.rand.index(y_test, as.numeric(y_ord_t))
+results.ck[1,3]=cohen.kappa(x=cbind(y_test,as.numeric(y_ord_t)))$kappa
+results.newi[1,3]=newindex(mu_ord_t,y_test,num_classes_ordfor)$norm.index
+
+mu_omerf_t =  predict.omerf(omerf.mod, y, test.data, test.data$gr, type='mu')
+y_omerf_t = predict.omerf(omerf.mod, y, test.data, test.data$gr, type='response')
+results.acc[1,4]=sum(y_test==as.numeric(y_omerf_t))/length(y_test)
+results.mse[1,4]=mean((y_test - as.numeric(y_omerf_t))^2)
+cm.omerf <- table(y_test, y_omerf_t)
+num_classes_omerf <- max(nrow(cm.omerf), ncol(cm.omerf))
+cm.omerf2 <- matrix(0, nrow = num_classes_omerf, ncol = num_classes_omerf)
+rownames(cm.omerf2) <- colnames(cm.omerf2) <- lev
+cm.omerf2[rownames(cm.omerf), colnames(cm.omerf)] <- cm.omerf[rownames(cm.omerf), colnames(cm.omerf)]
+results.oc[1,4]=OrdinalClassificationIndex(cm.omerf2, dim(cm.omerf2)[1])
+results.ari[1,4]=adj.rand.index(y_test, as.numeric(y_omerf_t))
+results.ck[1,4]=cohen.kappa(x=cbind(y_test,as.numeric(y_omerf_t)))$kappa
+results.newi[1,4]=newindex(mu_omerf_t,y_test,num_classes_omerf)$norm.index
+  
+mu_clmm_t=as.data.frame(matrix(0, dim(test.data)[1], length(lev)))
+eta_clmm_t=as.data.frame(matrix(0, dim(test.data)[1], length(lev)))
+names(mu_clmm_t) = lev
+names(eta_clmm_t) = lev
+for (c in lev) {
+  for (j in 1:dim(test.data)[1]) {
+    if (c==lev[1]) {
+      eta_clmm_t[j,c]=as.numeric(clmm.mod$Theta[which(lev==c)]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - test.data$x4[j] * clmm.mod$beta[4] - test.data$x5[j] * clmm.mod$beta[5] - test.data$x6[j] * clmm.mod$beta[6] - test.data$x7[j] * clmm.mod$beta[7] - clmm.mod$ranef[test.data$gr[j]]
+        mu_clmm_t[j,c]=plogis(eta_clmm_t[j,c])
+      } else if(c==lev[length(lev)]) {
+        eta_clmm_t[j,c]=qlogis(0.999999)
+        mu_clmm_t[j,c]=1 - plogis(as.numeric(clmm.mod$Theta[which(lev==c)-1]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - test.data$x4[j] * clmm.mod$beta[4] - test.data$x5[j] * clmm.mod$beta[5] - test.data$x6[j] * clmm.mod$beta[6]- test.data$x7[j] * clmm.mod$beta[7] - clmm.mod$ranef[test.data$gr[j]])
+      } else {
+        eta_clmm_t[j,c]=as.numeric(clmm.mod$Theta[which(lev==c)]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - test.data$x4[j] * clmm.mod$beta[4] - test.data$x5[j] * clmm.mod$beta[5] - test.data$x6[j] * clmm.mod$beta[6]- test.data$x7[j] * clmm.mod$beta[7] - clmm.mod$ranef[test.data$gr[j]]
+        mu_clmm_t[j,c]=plogis(eta_clmm_t[j,c]) -
+          plogis(as.numeric(clmm.mod$Theta[which(lev==c)-1]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - test.data$x4[j] * clmm.mod$beta[4] - test.data$x5[j] * clmm.mod$beta[5] - test.data$x6[j] * clmm.mod$beta[6]- test.data$x7[j] * clmm.mod$beta[7] - clmm.mod$ranef[test.data$gr[j]])
+      }
+    }
+    
+  }
+  
+y_clmm_t <- as.numeric(names(mu_clmm_t)[apply(mu_clmm_t, 1, which.max)])
+results.acc[1,2]=sum(y_test==as.numeric(y_clmm_t))/length(y_test)
+results.mse[1,2]=mean((y_test - as.numeric(y_clmm_t))^2)
+cm.clmm <- table(y_test, y_clmm_t)
+num_classes_clmm <- max(nrow(cm.clmm), ncol(cm.clmm))
+cm.clmm2 <- matrix(0, nrow = num_classes_clmm, ncol = num_classes_clmm)
+rownames(cm.clmm2) <- colnames(cm.clmm2) <- lev
+cm.clmm2[rownames(cm.clmm), colnames(cm.clmm)] <- cm.clmm[rownames(cm.clmm), colnames(cm.clmm)]
+results.oc[1,2]=OrdinalClassificationIndex(cm.clmm2, dim(cm.clmm2)[1])
+results.ari[1,2]=adj.rand.index(y_test, as.numeric(y_clmm_t))
+results.ck[1,2]=cohen.kappa(x=cbind(y_test,as.numeric(y_clmm_t)))$kappa
+results.newi[1,2]=newindex(mu_clmm_t,y_test,num_classes_clmm)$norm.index
+
+results.acc
+results.mse
+results.oc
+results.ari
+results.ck
+results.newi
+```
+
+Random effects
+
+```{r}
+#simulated rand eff
+bi_orig <- unique(dati$bi.train)
+ord.re2 <- order(bi_orig)
+lev2 <- levels(gr)
+plot(1:length(lev2), bi_orig[ord.re2], axes=FALSE, ylim=range(bi_orig),
+     xlab="group", ylab="group effect")
+axis(1, at=1:length(lev2), labels = lev2[ord.re2])
+axis(2)
+abline(h = 0, lty=2)
+
+#clmm
+ci <- clmm.mod$ranef + qnorm(0.975) * sqrt(clmm.mod$condVar) %o% c(-1, 1)
+ord.re <- order(clmm.mod$ranef)
+lev <- levels(gr)
+ci <- ci[order(clmm.mod$ranef),]
+plot(1:length(lev), clmm.mod$ranef[ord.re], axes=FALSE, ylim=range(ci),
+     xlab="group", ylab="group effect")
+axis(1, at=1:length(lev), labels = lev[ord.re])
+axis(2)
+for(i in 1:length(lev)) segments(i, ci[i,1], i, ci[i, 2])
+abline(h = 0, lty=2)
+
+#omerf
+ranef.omerf(omerf.mod,gr)
+ord.re3 <- order(omerf.mod$clmm.model$ranef)
+
+```
+
+PARTIAL PLOT - random forest (omerf)
+
+```{r}
+forest.data=cbind(omerf.mod$rf.target, cov)
+par(mfrow=c(2,3))
+partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x1")
+partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x2")
+partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x3")
+partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x4")
+partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x5")
+partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x6")
+partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x7")
+```
+
+PARTIAL PLOT - ordinal forest
+
+```{r}
+xv <- for.data[,"x1"]
+xv <- as.numeric(xv)
+n.pt <- 20
+x.pt <- seq(min(xv), max(xv), length = n.pt)
+y.pt <- numeric(length(x.pt))
+n <- nrow(for.data) 
+ylab <- c("p(x=1)","p(x=2)","p(x=3)")
+par(mfrow=c(1,3))
+for (c in 1:3) {
+  for (j in seq(along = x.pt)) {
+    focus <- c #class
+    x.data <- for.data
+    x.data[, "x1"] <- rep(x.pt[j], n)
+    pr <- predict(ordfor.mod, x.data, type = "prob")$classprobs
+    y.pt[j] <- mean(pr[, focus])
+  }
+  plot(x.pt, y.pt, type = "l", xlab="x1", ylab=ylab[c])
+}
+
+xv <- for.data[,"x2"]
+xv <- as.numeric(xv)
+n.pt <- 20
+x.pt <- seq(min(xv), max(xv), length = n.pt)
+y.pt <- numeric(length(x.pt))
+n <- nrow(for.data) 
+ylab <- c("p(x=1)","p(x=2)","p(x=3)")
+par(mfrow=c(1,3))
+for (c in 1:3) {
+  for (j in seq(along = x.pt)) {
+    focus <- c #class
+    x.data <- for.data
+    x.data[, "x2"] <- rep(x.pt[j], n)
+    pr <- predict(ordfor.mod, x.data, type = "prob")$classprobs
+    y.pt[j] <- mean(pr[, focus])
+  }
+  plot(x.pt, y.pt, type = "l", xlab="x2", ylab=ylab[c])
+}
+
+xv <- for.data[,"x3"]
+xv <- as.numeric(xv)
+n.pt <- 20
+x.pt <- seq(min(xv), max(xv), length = n.pt)
+y.pt <- numeric(length(x.pt))
+n <- nrow(for.data) 
+ylab <- c("p(x=1)","p(x=2)","p(x=3)")
+par(mfrow=c(1,3))
+for (c in 1:3) {
+  for (j in seq(along = x.pt)) {
+    focus <- c #class
+    x.data <- for.data
+    x.data[, "x3"] <- rep(x.pt[j], n)
+    pr <- predict(ordfor.mod, x.data, type = "prob")$classprobs
+    y.pt[j] <- mean(pr[, focus])
+  }
+  plot(x.pt, y.pt, type = "l", xlab="x3", ylab=ylab[c])
+}
+
+xv <- for.data[,"x4"]
+xv <- as.numeric(xv)
+n.pt <- 20
+x.pt <- seq(min(xv), max(xv), length = n.pt)
+y.pt <- numeric(length(x.pt))
+n <- nrow(for.data) 
+ylab <- c("p(x=1)","p(x=2)","p(x=3)")
+par(mfrow=c(1,3))
+for (c in 1:3) {
+  for (j in seq(along = x.pt)) {
+    focus <- c #class
+    x.data <- for.data
+    x.data[, "x4"] <- rep(x.pt[j], n)
+    pr <- predict(ordfor.mod, x.data, type = "prob")$classprobs
+    y.pt[j] <- mean(pr[, focus])
+  }
+  plot(x.pt, y.pt, type = "l", xlab="x4", ylab=ylab[c])
+}
+
+xv <- for.data[,"x5"]
+xv <- as.numeric(xv)
+n.pt <- 20
+x.pt <- seq(min(xv), max(xv), length = n.pt)
+y.pt <- numeric(length(x.pt))
+n <- nrow(for.data) 
+ylab <- c("p(x=1)","p(x=2)","p(x=3)")
+par(mfrow=c(1,3))
+for (c in 1:3) {
+  for (j in seq(along = x.pt)) {
+    focus <- c #class
+    x.data <- for.data
+    x.data[, "x5"] <- rep(x.pt[j], n)
+    pr <- predict(ordfor.mod, x.data, type = "prob")$classprobs
+    y.pt[j] <- mean(pr[, focus])
+  }
+  plot(x.pt, y.pt, type = "l", xlab="x5", ylab=ylab[c])
+}
+
+xv <- for.data[,"x6"]
+xv <- as.numeric(xv)
+n.pt <- 20
+x.pt <- seq(min(xv), max(xv), length = n.pt)
+y.pt <- numeric(length(x.pt))
+n <- nrow(for.data) 
+ylab <- c("p(x=1)","p(x=2)","p(x=3)")
+par(mfrow=c(1,3))
+for (c in 1:3) {
+  for (j in seq(along = x.pt)) {
+    focus <- c #class
+    x.data <- for.data
+    x.data[, "x6"] <- rep(x.pt[j], n)
+    pr <- predict(ordfor.mod, x.data, type = "prob")$classprobs
+    y.pt[j] <- mean(pr[, focus])
+  }
+  plot(x.pt, y.pt, type = "l", xlab="x6", ylab=ylab[c])
+}
+
+xv <- for.data[,"x7"]
+xv <- as.numeric(xv)
+n.pt <- 20
+x.pt <- seq(min(xv), max(xv), length = n.pt)
+y.pt <- numeric(length(x.pt))
+n <- nrow(for.data) 
+ylab <- c("p(x=1)","p(x=2)","p(x=3)")
+par(mfrow=c(1,3))
+for (c in 1:3) {
+  for (j in seq(along = x.pt)) {
+    focus <- c #class
+    x.data <- for.data
+    x.data[, "x7"] <- rep(x.pt[j], n)
+    pr <- predict(ordfor.mod, x.data, type = "prob")$classprobs
+    y.pt[j] <- mean(pr[, focus])
+  }
+  plot(x.pt, y.pt, type = "l", xlab="x7", ylab=ylab[c])
+}
+
+```

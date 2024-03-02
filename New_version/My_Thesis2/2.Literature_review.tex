@@ -1,0 +1,33 @@
+\section{Literature review}
+\label{sec:literature_rev}
+The method proposed in this study takes inspiration from the so-called aggregated methods.
+These methods refer to that type of algorithms which focus on incorporating tree-based approaches \cite{breiman2017classification}, or their ensembles (like random forest \cite{breiman2001random}), into mixed-effects models \cite{pinheiro2006mixed}.
+Tree-based models are increasingly popular for their ability to capture complex and nonlinear relationships; this combination with mixed models allows their extension to the analysis of both nested and longitudinal data. The first are data that present a hierarchical multilevel structure, the second refer to the situation where repeated observations are available for each sampled object.
+
+It is important to account for this framework, as it can provide significant insights that might otherwise be neglected, enabling the quantification of the portion of variability in the response variable that is attributable to each level of grouping. Nested data are not independently and identically distributed (i.i.d) as in classical regression and classification models, but their distribution depend on their grouping structure.
+Analysing and disentangling the effects associated with each level of the hierarchy enables a deeper understanding and investigation of the latent structure present at the highest level of the hierarchy, thereby increasing the comprehension of the phenomenon described by the data.
+
+Aggregated methods developed in statistical literature can be categorized into two groups: the first that focuses on Gaussian responses, making it unsuitable for classification tasks, while the second group extends its applicability to non-Gaussian data and is suitable for addressing classification problems.
+
+The works in \cite{sela2012re,hajjem2011mixed,hajjem2014mixed} pertains to the first collection of models.
+In the work of Sela and Simonoff \cite{sela2012re}, it is implemented the Random Effects Expectation-Maximization (RE-EM) tree; while in \cite{hajjem2011mixed} Hajjem et al. propose the Mixed-Effect Regression Tree (MERT) model.
+They both are extensions of a conventional regression tree to account for clustered and longitudinal data, sobstituting the linear fixed part of a linear mixed effects model with the tree estimates. 
+Then, trying to improve prediction accuracy, in \cite{hajjem2014mixed} the authors replace the regression tree with a random forest, introducing a method known as Mixed-Effects Random Forest (MERF).
+
+With regard to the extension to other types of outcomes, in \cite{hajjem2017generalized} the linear structure used to model the fixed effects component in a generalized linear mixed model's predictor is replaced with a regression tree structure, obtaining the Generalized Mixed-Effects Regression Tree (GMERT), which is basically the MERT approach extended to non-Gaussian responses.
+Another expansion of a classification problem is the introduction of the Generalized Mixed-Effects Tree (GMET) \cite{fontana2021performing}. It starts by initialising the random-effects to zero, then it estimates the target variable through a generalized linear model, builds a regression tree using
+the estimated target variable as the dependent variable and finally fits a mixed-effects model to estimate the random-effects part, using the fixed-effects part estimated by the tree as an offset.
+In \cite{fokkema2018detecting}, the authors propose an algorithm known as Generalized Linear Mixed-effects Model tree (GLMM tree), which iteratively refines the estimates of a generalized linear model tree and a mixed-effects model until convergence is achieved.
+Lastly, in \cite{speiser2020bimm}, the authors introduce a decision tree method for modeling clustered and longitudinal binary outcomes within a Bayesian framework, called Binary Mixed Model tree (BiMM tree).
+
+Another step forward in the field of tree-based aggregated models has been done by Pellagatti et al. in \cite{pellagatti2021generalized}, implementing the Generalized Mixed-Effects Random Forest (GMERF) and thus extending for the first time random forest, and not only simple trees, to deal with hierarchical data, both for regression and classification (for any response variable in the exponential family).
+
+To integrate into this existing literature and contribute an additional step, the current research work proposes a novel method called Ordinal Mixed-Effects Random Forest (OMERF), that is inspired by the GMERF model, but extends the random forest to deal with ordinal data, namely, with ordinal regression problems.
+
+Concerning the statistical literature about ordinal data, one of the early contributions to classification techniques for ordinal data can be found in \cite{mccullagh1980regression}, where a regression model is introduced. Its multilevel extention, the random effects cumulative model, is described in \cite{tutz1996random}, where ordinal regression models as special cases of multivariate generalized linear models are extended to include random effects in the linear predictor.
+
+With regard to the implementation of nonlinear ordinal models, some attempts to implement new techniques can be found in the literature.
+The work in \cite{tutz2003generalized} proposes an extension of ordinal regression through the generalization of the additive model by incorporating nonparametric terms; in \cite{shashua2002ranking} Shashua and Levin introduce a generalised formulation for the support vector machine for ordinal data; finally, the ordinal random forest method is presented in \cite{hornung2020ordinal}, which is a random forest-based prediction method for ordinal response variables.
+
+Nonetheless, to the best of our knowledge, this is the first time that random forest is extended to deal with both the ordinal classification setting and nested structures, implementing an ordinal model which is able to capture complex nonlinear data relationships, and at the same time to inspect and understand the multilevel nature of data.
+

@@ -1,0 +1,747 @@
+---
+title: "plot_studenti"
+output: html_document
+date: "2023-09-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "D:/tesi2/dati")
+```
+
+Read the dataset, create datasets for training and testing and import the omerf function and its methods
+
+```{r}
+source("OMERF_new.R")
+source("ord_class_index.R")
+source('index.R')
+studenti <- read.csv("new_studenti.csv", sep = ";", dec = ",")
+
+studenti$DataNascita=as.factor(studenti$DataNascita)
+studenti$Sesso=as.factor(studenti$Sesso)
+studenti$Cittadinanza_bin=as.factor(studenti$Cittadinanza_bin)
+studenti$PEI=as.factor(studenti$PEI)
+studenti$PDB=as.factor(studenti$PDB)
+studenti$StatusFinale_bin_prec=as.factor(studenti$StatusFinale_bin_prec)
+#studenti$mate_primo_quad=as.factor(studenti$mate_primo_quad)
+
+#possible responses
+studenti$rischio=as.factor(studenti$rischio)
+studenti$Matematica_finale=as.factor(studenti$Matematica_finale)
+
+#possible random effects
+studenti$Settore=as.factor(studenti$Settore)
+studenti$Classe=as.factor(studenti$Classe)
+
+set.seed(1999)
+
+library(caret)
+split_indices <- createDataPartition(studenti$Matematica_finale, p = 0.80, list = FALSE)
+data_test_orig <- studenti[-split_indices, ]
+# 'DataNascita','Sesso','PEI','PDB','StatusFinale_bin_prec','perc_doc_ruolo','MediaFinale_prec','Matematica_finale_prec','mate_primo_quad',
+# 'assenze_perc21','assenze_perc41','assenze21','note_merito21','note_impegno21','note_disciplinari21','ritardi21','varianza21','varianza1718','debito_prec','debito_mate_prec'
+
+data_test <- data_test_orig[,c('DataNascita','Cittadinanza_bin','Sesso','PDB','perc_doc_ruolo','mate_primo_quad','assenze_perc21','note_merito21','note_disciplinari21','note_impegno21','ritardi21','varianza21','Matematica_finale_prec')]
+names(data_test) = c("regular","nationality","gender","PDP","tenured_teachers","first_term_math","absence","merit_notes","disciplinary_notes","commitment_notes","delays","variance","previous_math")
+studenti <- studenti[split_indices, ]
+table(studenti$Matematica_finale)
+
+y_test_orig=data_test_orig$Matematica_finale
+y=studenti$Matematica_finale
+cov=studenti[,c('DataNascita','Cittadinanza_bin','Sesso','PDB','perc_doc_ruolo','mate_primo_quad','assenze_perc21','note_merito21','note_disciplinari21','note_impegno21','ritardi21','varianza21','Matematica_finale_prec')]
+names(cov) = c("regular","nationality","gender","PDP","tenured_teachers","first_term_math","absence","merit_notes","disciplinary_notes","commitment_notes","delays","variance","previous_math")
+group=studenti$Classe
+
+```
+
+CLM
+
+```{r}
+library(ordinal)
+clm.data= cbind(y,cov)
+clm.0=clm(y ~ regular+nationality+gender+PDP+tenured_teachers+absence+merit_notes+disciplinary_notes+commitment_notes+delays, data=clm.data, link='logit')
+summary(clm.0)
+clm.1=clm(y ~ regular+nationality+gender+PDP+tenured_teachers+first_term_math+absence+merit_notes+disciplinary_notes+commitment_notes+delays+variance, data=clm.data, link='logit')
+summary(clm.1)
+clm.2=clm(y ~ regular+nationality+gender+PDP+tenured_teachers+first_term_math+absence+merit_notes+disciplinary_notes+commitment_notes+delays+variance+previous_math, data=clm.data, link='logit')
+summary(clm.2)
+
+# If type = "cum.prob" or type = "linear.predictor" there will be two sets of predictions, standard errors and intervals;
+# one for j and one for j-1 (in the usual notation) where j = 1, ..., J index the response classes.
+# TEST
+mu_clm_t.0=predict(clm.0,data_test)$fit
+lev=levels(clm.data$y)
+names(mu_clm_t.0) = lev
+y_clm_t.0 <- as.numeric(names(mu_clm_t.0)[apply(mu_clm_t.0, 1, which.max)])
+prob_t.0=predict(clm.0,data_test,type = "cum.prob")[1]
+prob_clm_t.0=prob_t.0$cprob1
+prob_clm_t.0[which(prob_clm_t.0==1)]=0.999
+eta_clm_t.0=qlogis(prob_clm_t.0)
+
+mu_clm_t.1=predict(clm.1,data_test)$fit
+lev=levels(clm.data$y)
+names(mu_clm_t.1) = lev
+y_clm_t.1 <- as.numeric(names(mu_clm_t.1)[apply(mu_clm_t.1, 1, which.max)])
+prob_t.1=predict(clm.1,data_test,type = "cum.prob")[1]
+prob_clm_t.1=prob_t.1$cprob1
+prob_clm_t.1[which(prob_clm_t.1==1)]=0.999
+eta_clm_t.1=qlogis(prob_clm_t.1)
+
+mu_clm_t.2=predict(clm.2,data_test)$fit
+lev=levels(clm.data$y)
+names(mu_clm_t.2) = lev
+y_clm_t.2 <- as.numeric(names(mu_clm_t.2)[apply(mu_clm_t.2, 1, which.max)])
+prob_t.2=predict(clm.2,data_test,type = "cum.prob")[1]
+prob_clm_t.2=prob_t.2$cprob1
+prob_clm_t.2[which(prob_clm_t.2==1)]=0.999
+eta_clm_t.2=qlogis(prob_clm_t.2)
+
+```
+
+CLMM
+
+```{r}
+forest.data=cbind(clm.data,group)
+clmm.data=forest.data
+clmm.0=clmm(y ~ regular+nationality+gender+PDP+tenured_teachers+absence+merit_notes+disciplinary_notes+commitment_notes+delays+(1|group), link='logit', data=clmm.data, Hess=TRUE, control=clmm.control(maxLineIter = 200, maxIter=500, grtol=1e-4))
+summary(clmm.0)
+
+clmm.1=clmm(y ~ regular+nationality+gender+PDP+tenured_teachers+first_term_math+absence+merit_notes+disciplinary_notes+commitment_notes+delays+variance+(1|group), link='logit', data=clmm.data, Hess=TRUE, control=clmm.control(maxLineIter = 200, maxIter=500, grtol=1e-4))
+summary(clmm.1)
+
+clmm.2=clmm(y ~ regular+nationality+gender+PDP+tenured_teachers+first_term_math+absence+merit_notes+disciplinary_notes+commitment_notes+delays+variance+previous_math+(1|group), link='logit', data=clmm.data, Hess=TRUE, control=clmm.control(maxLineIter = 200, maxIter=500, grtol=1e-4))
+summary(clmm.2)
+
+# TEST
+data_test=cbind(data_test,data_test_orig$Classe)
+names(data_test)[dim(data_test)[2]]='group'
+
+eta_clmm_t.0=as.data.frame(matrix(0, dim(data_test)[1], length(lev)))
+mu_clmm_t.0=as.data.frame(matrix(0, dim(data_test)[1], length(lev)))
+names(mu_clmm_t.0) = lev
+names(eta_clmm_t.0) = lev
+for (j in lev) {
+  for (i in 1:dim(data_test)[1]) {
+    if (j==lev[1]) {
+      eta_clmm_t.0[i,j]=as.numeric(clmm.0$Theta[which(lev==j)]) - ifelse(data_test$regular[i]==0, clmm.0$beta[1], ifelse(data_test$regular[i]==1,clmm.0$beta[2],0)) - ifelse(data_test$nationality[i]==1, clmm.0$beta[3], 0) - ifelse(data_test$gender[i]==1, clmm.0$beta[4], 0) - ifelse(data_test$PDP[i]==1, clmm.0$beta[5], 0) - data_test$tenured_teachers[i] * clmm.0$beta[6] - data_test$absence[i] * clmm.0$beta[7] - data_test$merit_notes[i] * clmm.0$beta[8] - data_test$disciplinary_notes[i] * clmm.0$beta[9] - data_test$commitment_notes[i] * clmm.0$beta[10] - data_test$delays[i] * clmm.0$beta[11] - clmm.0$ranef[data_test$group[i]]
+      mu_clmm_t.0[i,j]=plogis(eta_clmm_t.0[i,j])
+    } else if(j==lev[length(lev)]) {
+      eta_clmm_t.0[i,j]=qlogis(0.999)
+      mu_clmm_t.0[i,j]=1 - plogis(as.numeric(clmm.0$Theta[which(lev==j)-1]) - ifelse(data_test$regular[i]==0, clmm.0$beta[1], ifelse(data_test$regular[i]==1,clmm.0$beta[2],0)) - ifelse(data_test$nationality[i]==1, clmm.0$beta[3], 0) - ifelse(data_test$gender[i]==1, clmm.0$beta[4], 0) - ifelse(data_test$PDP[i]==1, clmm.0$beta[5], 0) - data_test$tenured_teachers[i] * clmm.0$beta[6] - data_test$absence[i] * clmm.0$beta[7] - data_test$merit_notes[i] * clmm.0$beta[8] - data_test$disciplinary_notes[i] * clmm.0$beta[9] - data_test$commitment_notes[i] * clmm.0$beta[10] - data_test$delays[i] * clmm.0$beta[11] - clmm.0$ranef[data_test$group[i]])
+    } else {
+      eta_clmm_t.0[i,j]=as.numeric(clmm.0$Theta[which(lev==j)]) - ifelse(data_test$regular[i]==0, clmm.0$beta[1], ifelse(data_test$regular[i]==1,clmm.0$beta[2],0)) - ifelse(data_test$nationality[i]==1, clmm.0$beta[3], 0) - ifelse(data_test$gender[i]==1, clmm.0$beta[4], 0) - ifelse(data_test$PDP[i]==1, clmm.0$beta[5], 0) - data_test$tenured_teachers[i] * clmm.0$beta[6] - data_test$absence[i] * clmm.0$beta[7] - data_test$merit_notes[i] * clmm.0$beta[8] - data_test$disciplinary_notes[i] * clmm.0$beta[9] - data_test$commitment_notes[i] * clmm.0$beta[10] - data_test$delays[i] * clmm.0$beta[11] - clmm.0$ranef[data_test$group[i]]
+      mu_clmm_t.0[i,j]=plogis(eta_clmm_t.0[i,j]) -
+        plogis(as.numeric(clmm.0$Theta[which(lev==j)-1]) - ifelse(data_test$regular[i]==0, clmm.0$beta[1], ifelse(data_test$regular[i]==1,clmm.0$beta[2],0)) - ifelse(data_test$nationality[i]==1, clmm.0$beta[3], 0) - ifelse(data_test$gender[i]==1, clmm.0$beta[4], 0) - ifelse(data_test$PDP[i]==1, clmm.0$beta[5], 0) - data_test$tenured_teachers[i] * clmm.0$beta[6] - data_test$absence[i] * clmm.0$beta[7] - data_test$merit_notes[i] * clmm.0$beta[8] - data_test$disciplinary_notes[i] * clmm.0$beta[9] - data_test$commitment_notes[i] * clmm.0$beta[10] - data_test$delays[i] * clmm.0$beta[11] - clmm.0$ranef[data_test$group[i]])
+    }
+  }
+
+}
+
+max_mu_clmm_t.0 <- apply(mu_clmm_t.0, 1, max)
+y_clmm_t.0 <- names(mu_clmm_t.0)[apply(mu_clmm_t.0, 1, which.max)]
+max_eta_clmm_t.0 <- rep(0,dim(data_test)[1])
+fitmu_clmm_t.0 <- rep(0,dim(data_test)[1])
+fiteta_clmm_t.0 <- rep(0,dim(data_test)[1])
+for (i in 1:dim(data_test)[1]) {
+  max_eta_clmm_t.0[i] <- eta_clmm_t.0[i,apply(mu_clmm_t.0, 1, which.max)[i]]
+  fitmu_clmm_t.0[i] <- mu_clmm_t.0[i,which(lev==y_test_orig[i])]
+  fiteta_clmm_t.0[i] <- eta_clmm_t.0[i,which(lev==y_test_orig[i])]
+}
+
+
+
+
+eta_clmm_t.1=as.data.frame(matrix(0, dim(data_test)[1], length(lev)))
+mu_clmm_t.1=as.data.frame(matrix(0, dim(data_test)[1], length(lev)))
+names(mu_clmm_t.1) = lev
+names(eta_clmm_t.1) = lev
+for (j in lev) {
+  for (i in 1:dim(data_test)[1]) {
+    if (j==lev[1]) {
+      eta_clmm_t.1[i,j]=as.numeric(clmm.1$Theta[which(lev==j)]) - ifelse(data_test$regular[i]==0, clmm.1$beta[1], ifelse(data_test$regular[i]==1,clmm.1$beta[2],0)) - ifelse(data_test$nationality[i]==1, clmm.1$beta[3], 0) - ifelse(data_test$gender[i]==1, clmm.1$beta[4], 0) - ifelse(data_test$PDP[i]==1, clmm.1$beta[5], 0) - data_test$tenured_teachers[i] * clmm.1$beta[6] - data_test$first_term_math[i] * clmm.1$beta[7] - data_test$absence[i] * clmm.1$beta[8] - data_test$merit_notes[i] * clmm.1$beta[9] - data_test$disciplinary_notes[i] * clmm.1$beta[10] - data_test$commitment_notes[i] * clmm.1$beta[11] - data_test$delays[i] * clmm.1$beta[12] - data_test$variance[i] * clmm.1$beta[13] - clmm.1$ranef[data_test$group[i]]
+      mu_clmm_t.1[i,j]=plogis(eta_clmm_t.1[i,j])
+    } else if(j==lev[length(lev)]) {
+      eta_clmm_t.1[i,j]=qlogis(0.999)
+      mu_clmm_t.1[i,j]=1 - plogis(as.numeric(clmm.1$Theta[which(lev==j)-1]) - ifelse(data_test$regular[i]==0, clmm.1$beta[1], ifelse(data_test$regular[i]==1,clmm.1$beta[2],0)) - ifelse(data_test$nationality[i]==1, clmm.1$beta[3], 0) - ifelse(data_test$gender[i]==1, clmm.1$beta[4], 0) - ifelse(data_test$PDP[i]==1, clmm.1$beta[5], 0) - data_test$tenured_teachers[i] * clmm.1$beta[6] - data_test$first_term_math[i] * clmm.1$beta[7] - data_test$absence[i] * clmm.1$beta[8] - data_test$merit_notes[i] * clmm.1$beta[9] - data_test$disciplinary_notes[i] * clmm.1$beta[10] - data_test$commitment_notes[i] * clmm.1$beta[11] - data_test$delays[i] * clmm.1$beta[12] - data_test$variance[i] * clmm.1$beta[13] - clmm.1$ranef[data_test$group[i]])
+    } else {
+      eta_clmm_t.1[i,j]=as.numeric(clmm.1$Theta[which(lev==j)]) - ifelse(data_test$regular[i]==0, clmm.1$beta[1], ifelse(data_test$regular[i]==1,clmm.1$beta[2],0)) - ifelse(data_test$nationality[i]==1, clmm.1$beta[3], 0) - ifelse(data_test$gender[i]==1, clmm.1$beta[4], 0) - ifelse(data_test$PDP[i]==1, clmm.1$beta[5], 0) - data_test$tenured_teachers[i] * clmm.1$beta[6] - data_test$first_term_math[i] * clmm.1$beta[7] - data_test$absence[i] * clmm.1$beta[8] - data_test$merit_notes[i] * clmm.1$beta[9] - data_test$disciplinary_notes[i] * clmm.1$beta[10] - data_test$commitment_notes[i] * clmm.1$beta[11] - data_test$delays[i] * clmm.1$beta[12] - data_test$variance[i] * clmm.1$beta[13] - clmm.1$ranef[data_test$group[i]]
+      mu_clmm_t.1[i,j]=plogis(eta_clmm_t.1[i,j]) -
+        plogis(as.numeric(clmm.1$Theta[which(lev==j)-1]) - ifelse(data_test$regular[i]==0, clmm.1$beta[1], ifelse(data_test$regular[i]==1,clmm.1$beta[2],0)) - ifelse(data_test$nationality[i]==1, clmm.1$beta[3], 0) - ifelse(data_test$gender[i]==1, clmm.1$beta[4], 0) - ifelse(data_test$PDP[i]==1, clmm.1$beta[5], 0) - data_test$tenured_teachers[i] * clmm.1$beta[6] - data_test$first_term_math[i] * clmm.1$beta[7] - data_test$absence[i] * clmm.1$beta[8] - data_test$merit_notes[i] * clmm.1$beta[9] - data_test$disciplinary_notes[i] * clmm.1$beta[10] - data_test$commitment_notes[i] * clmm.1$beta[11] - data_test$delays[i] * clmm.1$beta[12] - data_test$variance[i] * clmm.1$beta[13] - clmm.1$ranef[data_test$group[i]])
+    }
+  }
+
+}
+
+max_mu_clmm_t.1 <- apply(mu_clmm_t.1, 1, max)
+y_clmm_t.1 <- names(mu_clmm_t.1)[apply(mu_clmm_t.1, 1, which.max)]
+max_eta_clmm_t.1 <- rep(0,dim(data_test)[1])
+fitmu_clmm_t.1 <- rep(0,dim(data_test)[1])
+fiteta_clmm_t.1 <- rep(0,dim(data_test)[1])
+for (i in 1:dim(data_test)[1]) {
+  max_eta_clmm_t.1[i] <- eta_clmm_t.1[i,apply(mu_clmm_t.1, 1, which.max)[i]]
+  fitmu_clmm_t.1[i] <- mu_clmm_t.1[i,which(lev==y_test_orig[i])]
+  fiteta_clmm_t.1[i] <- eta_clmm_t.1[i,which(lev==y_test_orig[i])]
+}
+
+
+
+
+
+eta_clmm_t.2=as.data.frame(matrix(0, dim(data_test)[1], length(lev)))
+mu_clmm_t.2=as.data.frame(matrix(0, dim(data_test)[1], length(lev)))
+names(mu_clmm_t.2) = lev
+names(eta_clmm_t.2) = lev
+for (j in lev) {
+  for (i in 1:dim(data_test)[1]) {
+    if (j==lev[1]) {
+      eta_clmm_t.2[i,j]=as.numeric(clmm.2$Theta[which(lev==j)]) - ifelse(data_test$regular[i]==0, clmm.2$beta[1], ifelse(data_test$regular[i]==1,clmm.2$beta[2],0)) - ifelse(data_test$nationality[i]==1, clmm.2$beta[3], 0) - ifelse(data_test$gender[i]==1, clmm.2$beta[4], 0) - ifelse(data_test$PDP[i]==1, clmm.2$beta[5], 0) - data_test$tenured_teachers[i] * clmm.2$beta[6] - data_test$first_term_math[i] * clmm.2$beta[7] - data_test$absence[i] * clmm.2$beta[8] - data_test$merit_notes[i] * clmm.2$beta[9] - data_test$disciplinary_notes[i] * clmm.2$beta[10] - data_test$commitment_notes[i] * clmm.2$beta[11] - data_test$delays[i] * clmm.2$beta[12] - data_test$variance[i] * clmm.2$beta[13] - data_test$previous_math[i] * clmm.2$beta[14] - clmm.2$ranef[data_test$group[i]]
+      mu_clmm_t.2[i,j]=plogis(eta_clmm_t.2[i,j])
+    } else if(j==lev[length(lev)]) {
+      eta_clmm_t.2[i,j]=qlogis(0.999)
+      mu_clmm_t.2[i,j]=1 - plogis(as.numeric(clmm.2$Theta[which(lev==j)-1]) - ifelse(data_test$regular[i]==0, clmm.2$beta[1], ifelse(data_test$regular[i]==1,clmm.2$beta[2],0)) - ifelse(data_test$nationality[i]==1, clmm.2$beta[3], 0) - ifelse(data_test$gender[i]==1, clmm.2$beta[4], 0) - ifelse(data_test$PDP[i]==1, clmm.2$beta[5], 0) - data_test$tenured_teachers[i] * clmm.2$beta[6] - data_test$first_term_math[i] * clmm.2$beta[7] - data_test$absence[i] * clmm.2$beta[8] - data_test$merit_notes[i] * clmm.2$beta[9] - data_test$disciplinary_notes[i] * clmm.2$beta[10] - data_test$commitment_notes[i] * clmm.2$beta[11] - data_test$delays[i] * clmm.2$beta[12] - data_test$variance[i] * clmm.2$beta[13] - data_test$previous_math[i] * clmm.2$beta[14] - clmm.2$ranef[data_test$group[i]])
+    } else {
+      eta_clmm_t.2[i,j]=as.numeric(clmm.2$Theta[which(lev==j)]) - ifelse(data_test$regular[i]==0, clmm.2$beta[1], ifelse(data_test$regular[i]==1,clmm.2$beta[2],0)) - ifelse(data_test$nationality[i]==1, clmm.2$beta[3], 0) - ifelse(data_test$gender[i]==1, clmm.2$beta[4], 0) - ifelse(data_test$PDP[i]==1, clmm.2$beta[5], 0) - data_test$tenured_teachers[i] * clmm.2$beta[6] - data_test$first_term_math[i] * clmm.2$beta[7] - data_test$absence[i] * clmm.2$beta[8] - data_test$merit_notes[i] * clmm.2$beta[9] - data_test$disciplinary_notes[i] * clmm.2$beta[10] - data_test$commitment_notes[i] * clmm.2$beta[11] - data_test$delays[i] * clmm.2$beta[12] - data_test$variance[i] * clmm.2$beta[13] - data_test$previous_math[i] * clmm.2$beta[14] - clmm.2$ranef[data_test$group[i]]
+      mu_clmm_t.2[i,j]=plogis(eta_clmm_t.2[i,j]) -
+        plogis(as.numeric(clmm.2$Theta[which(lev==j)-1]) - ifelse(data_test$regular[i]==0, clmm.2$beta[1], ifelse(data_test$regular[i]==1,clmm.2$beta[2],0)) - ifelse(data_test$nationality[i]==1, clmm.2$beta[3], 0) - ifelse(data_test$gender[i]==1, clmm.2$beta[4], 0) - ifelse(data_test$PDP[i]==1, clmm.2$beta[5], 0) - data_test$tenured_teachers[i] * clmm.2$beta[6] - data_test$first_term_math[i] * clmm.2$beta[7] - data_test$absence[i] * clmm.2$beta[8] - data_test$merit_notes[i] * clmm.2$beta[9] - data_test$disciplinary_notes[i] * clmm.2$beta[10] - data_test$commitment_notes[i] * clmm.2$beta[11] - data_test$delays[i] * clmm.2$beta[12] - data_test$variance[i] * clmm.2$beta[13] - data_test$previous_math[i] * clmm.2$beta[14] - clmm.2$ranef[data_test$group[i]])
+    }
+  }
+
+}
+
+max_mu_clmm_t.2 <- apply(mu_clmm_t.2, 1, max)
+y_clmm_t.2 <- names(mu_clmm_t.2)[apply(mu_clmm_t.2, 1, which.max)]
+max_eta_clmm_t.2 <- rep(0,dim(data_test)[1])
+fitmu_clmm_t.2 <- rep(0,dim(data_test)[1])
+fiteta_clmm_t.2 <- rep(0,dim(data_test)[1])
+for (i in 1:dim(data_test)[1]) {
+  max_eta_clmm_t.2[i] <- eta_clmm_t.2[i,apply(mu_clmm_t.2, 1, which.max)[i]]
+  fitmu_clmm_t.2[i] <- mu_clmm_t.2[i,which(lev==y_test_orig[i])]
+  fiteta_clmm_t.2[i] <- eta_clmm_t.2[i,which(lev==y_test_orig[i])]
+}
+
+```
+
+ORDINAL FOREST
+
+```{r}
+library(ordinalForest)
+ordfor.data=forest.data
+ordforest.0 <- ordfor(depvar = 'y', perffunction = 'probability', ordfor.data[, -which(names(ordfor.data) %in% c("first_term_math", "variance", "previous_math"))])
+ordforest.1 <- ordfor(depvar = 'y', perffunction = 'probability', ordfor.data[, -which(names(ordfor.data) %in% c("previous_math"))])
+ordforest.2 <- ordfor(depvar = 'y', perffunction = 'probability', ordfor.data)
+#TEST
+mu_ord_t.0 <- predict(ordforest.0, newdata=data_test)$classprobs
+max_mu_ord_t.0 <- apply(mu_ord_t.0, 1, max)
+y_ord_t.0 <- predict(ordforest.0, newdata=data_test)$ypred
+fitmu_ord_t.0 <- rep(0,dim(data_test)[1])
+for (i in 1:dim(data_test)[1]) {
+  fitmu_ord_t.0[i] <- mu_ord_t.0[i,y_test_orig[i]]
+}
+
+
+mu_ord_t.1 <- predict(ordforest.1, newdata=data_test)$classprobs
+max_mu_ord_t.1 <- apply(mu_ord_t.1, 1, max)
+y_ord_t.1 <- predict(ordforest.1, newdata=data_test)$ypred
+fitmu_ord_t.1 <- rep(0,dim(data_test)[1])
+for (i in 1:dim(data_test)[1]) {
+  fitmu_ord_t.1[i] <- mu_ord_t.1[i,y_test_orig[i]]
+}
+
+
+mu_ord_t.2 <- predict(ordforest.2, newdata=data_test)$classprobs
+max_mu_ord_t.2 <- apply(mu_ord_t.2, 1, max)
+y_ord_t.2 <- predict(ordforest.2, newdata=data_test)$ypred
+fitmu_ord_t.2 <- rep(0,dim(data_test)[1])
+for (i in 1:dim(data_test)[1]) {
+  fitmu_ord_t.2[i] <- mu_ord_t.2[i,y_test_orig[i]]
+}
+
+```
+
+omerf
+
+```{r}
+om.0 = omerf(y, cov[, -which(names(cov) %in% c("first_term_math", "variance", "previous_math"))], group)
+summary.omerf(om.0)
+om.0$clmm.model$ST
+VarCorr(om.0$clmm.model)
+
+om.1 = omerf(y, cov[, -which(names(cov) %in% c("previous_math"))], group)
+summary.omerf(om.1)
+om.1$clmm.model$ST
+VarCorr(om.1$clmm.model)
+
+om.2 = omerf(y, cov, group)
+summary.omerf(om.2)
+om.2$clmm.model$ST
+VarCorr(om.2$clmm.model)
+
+#varimp
+library(caret)
+varImp(om.0$forest.model)
+importance(om.0$forest.model, type=1)
+importance(om.0$forest.model, type=2)
+varImpPlot(om.0$forest.model)
+
+varImp(om.1$forest.model)
+importance(om.1$forest.model, type=1)
+importance(om.1$forest.model, type=2)
+varImpPlot(om.1$forest.model)
+
+varImp(om.2$forest.model)
+importance(om.2$forest.model, type=1)
+importance(om.2$forest.model, type=2)
+varImpPlot(om.2$forest.model)
+
+# TEST
+y_omerf_t.0 = predict.omerf(om.0, y, data_test, data_test$group, type='response')
+mu_omerf_t.0=predict.omerf(om.0, y, data_test, data_test$group, type='mu')
+max_mu_omerf_t.0 = apply(mu_omerf_t.0, 1, max)
+eta_omerf_t.0=predict.omerf(om.0, y, data_test, data_test$group, type='eta')
+fitmu_omerf_t.0 <- rep(0,dim(data_test)[1])
+max_eta_omerf_t.0 <- rep(0,dim(data_test)[1])
+fiteta_omerf_t.0 <- rep(0,dim(data_test)[1])
+for (i in 1:dim(data_test)[1]) {
+  fitmu_omerf_t.0[i] <- mu_omerf_t.0[i,y_test_orig[i]]
+  max_eta_omerf_t.0[i] <- eta_omerf_t.0[i,apply(mu_omerf_t.0, 1, which.max)[i]]
+  fiteta_omerf_t.0[i] <- eta_omerf_t.0[i,y_test_orig[i]]
+}
+
+
+
+y_omerf_t.1 = predict.omerf(om.1, y, data_test, data_test$group, type='response')
+mu_omerf_t.1=predict.omerf(om.1, y, data_test, data_test$group, type='mu')
+max_mu_omerf_t.1 = apply(mu_omerf_t.1, 1, max)
+eta_omerf_t.1=predict.omerf(om.1, y, data_test, data_test$group, type='eta')
+fitmu_omerf_t.1 <- rep(0,dim(data_test)[1])
+max_eta_omerf_t.1 <- rep(0,dim(data_test)[1])
+fiteta_omerf_t.1 <- rep(0,dim(data_test)[1])
+for (i in 1:dim(data_test)[1]) {
+  fitmu_omerf_t.1[i] <- mu_omerf_t.1[i,y_test_orig[i]]
+  max_eta_omerf_t.1[i] <- eta_omerf_t.1[i,apply(mu_omerf_t.1, 1, which.max)[i]]
+  fiteta_omerf_t.1[i] <- eta_omerf_t.1[i,y_test_orig[i]]
+}
+
+
+y_omerf_t.2 = predict.omerf(om.2, y, data_test, data_test$group, type='response')
+mu_omerf_t.2=predict.omerf(om.2, y, data_test, data_test$group, type='mu')
+max_mu_omerf_t.2 = apply(mu_omerf_t.2, 1, max)
+eta_omerf_t.2=predict.omerf(om.2, y, data_test, data_test$group, type='eta')
+fitmu_omerf_t.2 <- rep(0,dim(data_test)[1])
+max_eta_omerf_t.2 <- rep(0,dim(data_test)[1])
+fiteta_omerf_t.2 <- rep(0,dim(data_test)[1])
+for (i in 1:dim(data_test)[1]) {
+  fitmu_omerf_t.2[i] <- mu_omerf_t.2[i,y_test_orig[i]]
+  max_eta_omerf_t.2[i] <- eta_omerf_t.2[i,apply(mu_omerf_t.2, 1, which.max)[i]]
+  fiteta_omerf_t.2[i] <- eta_omerf_t.2[i,y_test_orig[i]]
+}
+```
+
+
+```{r}
+ci <- clmm.0$ranef + qnorm(0.975) * sqrt(clmm.0$condVar) %o% c(-1, 1)
+ord.re <- order(clmm.0$ranef)
+lev <- levels(group)
+ci <- ci[order(clmm.0$ranef),]
+plot(1:length(lev), clmm.0$ranef[ord.re], axes=FALSE, ylim=range(ci),
+     xlab="group", ylab="group effect")
+axis(1, at=1:length(lev), labels = lev[ord.re])
+axis(2)
+for(i in 1:length(lev)) segments(i, ci[i,1], i, ci[i, 2])
+abline(h = 0, lty=2)
+
+ord.re
+
+ci <- clmm.1$ranef + qnorm(0.975) * sqrt(clmm.1$condVar) %o% c(-1, 1)
+ord.re <- order(clmm.1$ranef)
+lev <- levels(group)
+ci <- ci[order(clmm.1$ranef),]
+plot(1:length(lev), clmm.1$ranef[ord.re], axes=FALSE, ylim=range(ci),
+     xlab="group", ylab="group effect")
+axis(1, at=1:length(lev), labels = lev[ord.re])
+axis(2)
+for(i in 1:length(lev)) segments(i, ci[i,1], i, ci[i, 2])
+abline(h = 0, lty=2)
+
+ord.re
+
+ci <- clmm.2$ranef + qnorm(0.975) * sqrt(clmm.2$condVar) %o% c(-1, 1)
+ord.re <- order(clmm.2$ranef)
+lev <- levels(group)
+ci <- ci[order(clmm.2$ranef),]
+plot(1:length(lev), clmm.2$ranef[ord.re], axes=FALSE, ylim=range(ci),
+     xlab="group", ylab="group effect")
+axis(1, at=1:length(lev), labels = lev[ord.re])
+axis(2)
+for(i in 1:length(lev)) segments(i, ci[i,1], i, ci[i, 2])
+abline(h = 0, lty=2)
+
+ord.re
+
+ranef.omerf(om.0,group)
+ord.re2 <- order(om.0$clmm.model$ranef)
+ord.re2
+
+ranef.omerf(om.1,group)
+ord.re2 <- order(om.1$clmm.model$ranef)
+ord.re2
+
+ranef.omerf(om.2,group)
+ord.re2 <- order(om.2$clmm.model$ranef)
+ord.re2
+```
+
+performance measures
+
+```{r}
+library(pdfCluster)
+library(psych)
+results.acc=matrix(nrow=3, ncol=4, data=rep(0,12))
+results.mse=matrix(nrow=3, ncol=4, data=rep(0,12))
+results.oc=matrix(nrow=3, ncol=4, data=rep(0,12))
+results.ari=matrix(nrow=3, ncol=4, data=rep(0,12))
+results.ck=matrix(nrow=3, ncol=4, data=rep(0,12))
+results.newi=matrix(nrow=3, ncol=4, data=rep(0,12))
+colnames(results.acc)=c('clm', 'clmm','ordforest', 'omerf')
+colnames(results.mse)=c('clm', 'clmm','ordforest', 'omerf')
+colnames(results.oc)=c('clm', 'clmm','ordforest', 'omerf')
+colnames(results.ari)=c('clm', 'clmm','ordforest', 'omerf')
+colnames(results.ck)=c('clm', 'clmm','ordforest', 'omerf')
+colnames(results.newi)=c('clm', 'clmm','ordforest', 'omerf')
+
+y_test=as.numeric(y_test_orig)+3
+y_test_newi=as.numeric(y_test_orig)
+lev=levels(clm.data$y)
+
+
+results.acc[1,1]=sum(y_test==as.numeric(y_clm_t.0))/length(y_test)
+results.mse[1,1]=mean((y_test - as.numeric(y_clm_t.0))^2)
+cm_clm <- table(y_test, as.numeric(y_clm_t.0))
+cm_clm
+num_classes_clm <- max(nrow(cm_clm), ncol(cm_clm))
+cm_clm2 <- matrix(0, nrow = num_classes_clm, ncol = num_classes_clm)
+rownames(cm_clm2) <- colnames(cm_clm2) <- lev
+cm_clm2[rownames(cm_clm), colnames(cm_clm)] <- cm_clm[rownames(cm_clm), colnames(cm_clm)]
+results.oc[1,1]=OrdinalClassificationIndex(cm_clm2, dim(cm_clm2)[1])
+results.ari[1,1]=adj.rand.index(y_test, as.numeric(y_clm_t.0))
+results.ck[1,1]=cohen.kappa(x=cbind(y_test,as.numeric(y_clm_t.0)))$kappa
+results.newi[1,1]=newindex(mu_clm_t.0,y_test_newi,num_classes_clm)$norm.index
+
+results.acc[2,1]=sum(y_test==as.numeric(y_clm_t.1))/length(y_test)
+results.mse[2,1]=mean((y_test - as.numeric(y_clm_t.1))^2)
+cm_clm <- table(y_test, as.numeric(y_clm_t.1))
+cm_clm
+num_classes_clm <- max(nrow(cm_clm), ncol(cm_clm))
+cm_clm2 <- matrix(0, nrow = num_classes_clm, ncol = num_classes_clm)
+rownames(cm_clm2) <- colnames(cm_clm2) <- lev
+cm_clm2[rownames(cm_clm), colnames(cm_clm)] <- cm_clm[rownames(cm_clm), colnames(cm_clm)]
+results.oc[2,1]=OrdinalClassificationIndex(cm_clm2, dim(cm_clm2)[1])
+results.ari[2,1]=adj.rand.index(y_test, as.numeric(y_clm_t.1))
+results.ck[2,1]=cohen.kappa(x=cbind(y_test,as.numeric(y_clm_t.1)))$kappa
+results.newi[2,1]=newindex(mu_clm_t.1,y_test_newi,num_classes_clm)$norm.index
+
+results.acc[3,1]=sum(y_test==as.numeric(y_clm_t.2))/length(y_test)
+results.mse[3,1]=mean((y_test - as.numeric(y_clm_t.2))^2)
+cm_clm <- table(y_test, as.numeric(y_clm_t.2))
+cm_clm
+num_classes_clm <- max(nrow(cm_clm), ncol(cm_clm))
+cm_clm2 <- matrix(0, nrow = num_classes_clm, ncol = num_classes_clm)
+rownames(cm_clm2) <- colnames(cm_clm2) <- lev
+cm_clm2[rownames(cm_clm), colnames(cm_clm)] <- cm_clm[rownames(cm_clm), colnames(cm_clm)]
+results.oc[3,1]=OrdinalClassificationIndex(cm_clm2, dim(cm_clm2)[1])
+results.ari[3,1]=adj.rand.index(y_test, as.numeric(y_clm_t.2))
+results.ck[3,1]=cohen.kappa(x=cbind(y_test,as.numeric(y_clm_t.2)))$kappa
+results.newi[3,1]=newindex(mu_clm_t.2,y_test_newi,num_classes_clm)$norm.index
+
+
+
+results.acc[1,2]=sum(y_test==as.numeric(y_clmm_t.0))/length(y_test)
+results.mse[1,2]=mean((y_test - as.numeric(y_clmm_t.0))^2)
+cm_clmm <- table(y_test, as.numeric(y_clmm_t.0))
+cm_clmm
+num_classes_clmm <- max(nrow(cm_clmm), ncol(cm_clmm))
+cm_clmm2 <- matrix(0, nrow = num_classes_clmm, ncol = num_classes_clmm)
+rownames(cm_clmm2) <- colnames(cm_clmm2) <- lev
+cm_clmm2[rownames(cm_clmm), colnames(cm_clmm)] <- cm_clmm[rownames(cm_clmm), colnames(cm_clmm)]
+results.oc[1,2]=OrdinalClassificationIndex(cm_clmm2, dim(cm_clmm2)[1])
+results.ari[1,2]=adj.rand.index(y_test, as.numeric(y_clmm_t.0))
+results.ck[1,2]=cohen.kappa(x=cbind(y_test,as.numeric(y_clmm_t.0)))$kappa
+results.newi[1,2]=newindex(mu_clmm_t.0,y_test_newi,num_classes_clmm)$norm.index
+
+results.acc[2,2]=sum(y_test==as.numeric(y_clmm_t.1))/length(y_test)
+results.mse[2,2]=mean((y_test - as.numeric(y_clmm_t.1))^2)
+cm_clmm <- table(y_test, as.numeric(y_clmm_t.1))
+cm_clmm
+num_classes_clmm <- max(nrow(cm_clmm), ncol(cm_clmm))
+cm_clmm2 <- matrix(0, nrow = num_classes_clmm, ncol = num_classes_clmm)
+rownames(cm_clmm2) <- colnames(cm_clmm2) <- lev
+cm_clmm2[rownames(cm_clmm), colnames(cm_clmm)] <- cm_clmm[rownames(cm_clmm), colnames(cm_clmm)]
+results.oc[2,2]=OrdinalClassificationIndex(cm_clmm2, dim(cm_clmm2)[1])
+results.ari[2,2]=adj.rand.index(y_test, as.numeric(y_clmm_t.1))
+results.ck[2,2]=cohen.kappa(x=cbind(y_test,as.numeric(y_clmm_t.1)))$kappa
+results.newi[2,2]=newindex(mu_clmm_t.1,y_test_newi,num_classes_clmm)$norm.index
+
+results.acc[3,2]=sum(y_test==as.numeric(y_clmm_t.2))/length(y_test)
+results.mse[3,2]=mean((y_test - as.numeric(y_clmm_t.2))^2)
+cm_clmm <- table(y_test, as.numeric(y_clmm_t.2))
+cm_clmm
+num_classes_clmm <- max(nrow(cm_clmm), ncol(cm_clmm))
+cm_clmm2 <- matrix(0, nrow = num_classes_clmm, ncol = num_classes_clmm)
+rownames(cm_clmm2) <- colnames(cm_clmm2) <- lev
+cm_clmm2[rownames(cm_clmm), colnames(cm_clmm)] <- cm_clmm[rownames(cm_clmm), colnames(cm_clmm)]
+results.oc[3,2]=OrdinalClassificationIndex(cm_clmm2, dim(cm_clmm2)[1])
+results.ari[3,2]=adj.rand.index(y_test, as.numeric(y_clmm_t.2))
+results.ck[3,2]=cohen.kappa(x=cbind(y_test,as.numeric(y_clmm_t.2)))$kappa
+results.newi[3,2]=newindex(mu_clmm_t.2,y_test_newi,num_classes_clmm)$norm.index
+
+
+
+
+results.acc[1,3]=sum(y_test==as.numeric(y_ord_t.0)+3)/length(y_test)
+results.mse[1,3]=mean((y_test - as.numeric(y_ord_t.0)+3)^2)
+cm_ord <- table(y_test, as.numeric(y_ord_t.0)+3)
+cm_ord
+num_classes_ord <- max(nrow(cm_ord), ncol(cm_ord))
+cm_ord2 <- matrix(0, nrow = num_classes_ord, ncol = num_classes_ord)
+rownames(cm_ord2) <- colnames(cm_ord2) <- lev
+cm_ord2[rownames(cm_ord), colnames(cm_ord)] <- cm_ord[rownames(cm_ord), colnames(cm_ord)]
+results.oc[1,3]=OrdinalClassificationIndex(cm_ord2, dim(cm_ord2)[1])
+results.ari[1,3]=adj.rand.index(y_test, as.numeric(y_ord_t.0)+3)
+results.ck[1,3]=cohen.kappa(x=cbind(y_test,as.numeric(y_ord_t.0)+3))$kappa
+results.newi[1,3]=newindex(mu_ord_t.0,y_test_newi,num_classes_ord)$norm.index
+
+results.acc[2,3]=sum(y_test==as.numeric(y_ord_t.1)+3)/length(y_test)
+results.mse[2,3]=mean((y_test - as.numeric(y_ord_t.1)+3)^2)
+cm_ord <- table(y_test, as.numeric(y_ord_t.1)+3)
+cm_ord
+num_classes_ord <- max(nrow(cm_ord), ncol(cm_ord))
+cm_ord2 <- matrix(0, nrow = num_classes_ord, ncol = num_classes_ord)
+rownames(cm_ord2) <- colnames(cm_ord2) <- lev
+cm_ord2[rownames(cm_ord), colnames(cm_ord)] <- cm_ord[rownames(cm_ord), colnames(cm_ord)]
+results.oc[2,3]=OrdinalClassificationIndex(cm_ord2, dim(cm_ord2)[1])
+results.ari[2,3]=adj.rand.index(y_test, as.numeric(y_ord_t.1)+3)
+results.ck[2,3]=cohen.kappa(x=cbind(y_test,as.numeric(y_ord_t.1)+3))$kappa
+results.newi[2,3]=newindex(mu_ord_t.1,y_test_newi,num_classes_ord)$norm.index
+
+results.acc[3,3]=sum(y_test==as.numeric(y_ord_t.2)+3)/length(y_test)
+results.mse[3,3]=mean((y_test - as.numeric(y_ord_t.2)+3)^2)
+cm_ord <- table(y_test, as.numeric(y_ord_t.2)+3)
+cm_ord
+num_classes_ord <- max(nrow(cm_ord), ncol(cm_ord))
+cm_ord2 <- matrix(0, nrow = num_classes_ord, ncol = num_classes_ord)
+rownames(cm_ord2) <- colnames(cm_ord2) <- lev
+cm_ord2[rownames(cm_ord), colnames(cm_ord)] <- cm_ord[rownames(cm_ord), colnames(cm_ord)]
+results.oc[3,3]=OrdinalClassificationIndex(cm_ord2, dim(cm_ord2)[1])
+results.ari[3,3]=adj.rand.index(y_test, as.numeric(y_ord_t.2)+3)
+results.ck[3,3]=cohen.kappa(x=cbind(y_test,as.numeric(y_ord_t.2)+3))$kappa
+results.newi[3,3]=newindex(mu_ord_t.2,y_test_newi,num_classes_ord)$norm.index
+
+
+results.acc[1,4]=sum(y_test==as.numeric(y_omerf_t.0))/length(y_test)
+results.mse[1,4]=mean((y_test - as.numeric(y_omerf_t.0))^2)
+cm_omerf <- table(y_test, as.numeric(y_omerf_t.0))
+cm_omerf
+num_classes_omerf <- max(nrow(cm_omerf), ncol(cm_omerf))
+cm_omerf2 <- matrix(0, nrow = num_classes_omerf, ncol = num_classes_omerf)
+rownames(cm_omerf2) <- colnames(cm_omerf2) <- lev
+cm_omerf2[rownames(cm_omerf), colnames(cm_omerf)] <- cm_omerf[rownames(cm_omerf), colnames(cm_omerf)]
+results.oc[1,4]=OrdinalClassificationIndex(cm_omerf2, dim(cm_omerf2)[1])
+results.ari[1,4]=adj.rand.index(y_test, as.numeric(y_omerf_t.0))
+results.ck[1,4]=cohen.kappa(x=cbind(y_test,as.numeric(y_omerf_t.0)))$kappa
+results.newi[1,4]=newindex(mu_omerf_t.0,y_test_newi,num_classes_omerf)$norm.index
+
+results.acc[2,4]=sum(y_test==as.numeric(y_omerf_t.1))/length(y_test)
+results.mse[2,4]=mean((y_test - as.numeric(y_omerf_t.1))^2)
+cm_omerf <- table(y_test, as.numeric(y_omerf_t.1))
+cm_omerf
+num_classes_omerf <- max(nrow(cm_omerf), ncol(cm_omerf))
+cm_omerf2 <- matrix(0, nrow = num_classes_omerf, ncol = num_classes_omerf)
+rownames(cm_omerf2) <- colnames(cm_omerf2) <- lev
+cm_omerf2[rownames(cm_omerf), colnames(cm_omerf)] <- cm_omerf[rownames(cm_omerf), colnames(cm_omerf)]
+results.oc[2,4]=OrdinalClassificationIndex(cm_omerf2, dim(cm_omerf2)[1])
+results.ari[2,4]=adj.rand.index(y_test, as.numeric(y_omerf_t.1))
+results.ck[2,4]=cohen.kappa(x=cbind(y_test,as.numeric(y_omerf_t.1)))$kappa
+results.newi[2,4]=newindex(mu_omerf_t.1,y_test_newi,num_classes_omerf)$norm.index
+
+results.acc[3,4]=sum(y_test==as.numeric(y_omerf_t.2))/length(y_test)
+results.mse[3,4]=mean((y_test - as.numeric(y_omerf_t.2))^2)
+cm_omerf <- table(y_test, as.numeric(y_omerf_t.2))
+cm_omerf
+num_classes_omerf <- max(nrow(cm_omerf), ncol(cm_omerf))
+cm_omerf2 <- matrix(0, nrow = num_classes_omerf, ncol = num_classes_omerf)
+rownames(cm_omerf2) <- colnames(cm_omerf2) <- lev
+cm_omerf2[rownames(cm_omerf), colnames(cm_omerf)] <- cm_omerf[rownames(cm_omerf), colnames(cm_omerf)]
+results.oc[3,4]=OrdinalClassificationIndex(cm_omerf2, dim(cm_omerf2)[1])
+results.ari[3,4]=adj.rand.index(y_test, as.numeric(y_omerf_t.2))
+results.ck[3,4]=cohen.kappa(x=cbind(y_test,as.numeric(y_omerf_t.2)))$kappa
+results.newi[3,4]=newindex(mu_omerf_t.2,y_test_newi,num_classes_omerf)$norm.index
+
+results.acc
+results.mse
+results.oc
+results.ari
+results.ck
+results.newi
+```
+
+
+PARTIAL PLOT - random forest (da omerf)
+
+```{r}
+var.names=c("regular","nationality","gender","PDP","tenured_teachers","absence","merit_notes","disciplinary_notes","commitment_notes","delays")
+par(mfrow=c(2,4))
+for (i in 1:length(var.names)) {
+  partialPlot(om.0$forest.model, pred.data=forest.data,x.var=var.names[i],xlab=var.names[i],main='Partial dependence plot')
+}
+```
+```{r}
+var.names=c("regular","nationality","gender","PDP","tenured_teachers","first_term_math","absence","merit_notes","disciplinary_notes","commitment_notes","delays","variance")
+par(mfrow=c(2,4))
+for (i in 1:length(var.names)) {
+  partialPlot(om.1$forest.model, pred.data=forest.data,x.var=var.names[i],xlab=var.names[i],main='Partial dependence plot')
+}
+```
+```{r}
+var.names=c("regular","nationality","gender","PDP","tenured_teachers","first_term_math","absence","merit_notes","disciplinary_notes","commitment_notes","delays","variance","previous_math")
+par(mfrow=c(2,4))
+for (i in 1:length(var.names)) {
+  partialPlot(om.2$forest.model, pred.data=forest.data,x.var=var.names[i],xlab=var.names[i],main='Partial dependence plot')
+}
+```
+PARTIAL PLOT - ordinal forest
+
+```{r}
+var.names_cat=c("regular","nationality","gender","PDP")
+var.names_cont0=c("tenured_teachers","absence","merit_notes","disciplinary_notes","commitment_notes","delays")
+var.names_cont1=c("tenured_teachers","first_term_math","absence","merit_notes","disciplinary_notes","commitment_notes","delays","variance")
+var.names_cont2=c("tenured_teachers","first_term_math","absence","merit_notes","disciplinary_notes","commitment_notes","delays","variance","previous_math")
+
+for (i in 1:length(var.names_cat)) {
+    xv <- forest.data[,var.names_cat[i]]
+    x.pt <- levels(xv)
+    y.pt <- numeric(length(x.pt))
+    n <- nrow(forest.data) 
+    ylab <- c("p(x=4)","p(x=5)","p(x=6)","p(x=7)","p(x=8)","p(x=9)","p(x=10)")
+    par(mfrow=c(2,4))
+    for (j in 4:10) {
+      for (k in seq(along = x.pt)) {
+        focus <- j-3 #class (of y)
+        x.data <- forest.data
+        x.data[, var.names_cat[i]] <- factor(rep(x.pt[k], n), levels = x.pt)
+        pr <- predict(ordforest.0, x.data, type = "prob")$classprobs
+        y.pt[k] <- mean(pr[, focus])
+      }
+      barplot(y.pt, width=rep(1, length(y.pt)), col="blue",
+              xlab = var.names_cat[i], ylab = ylab[j-3], names.arg=x.pt)
+    }
+}
+
+
+for (i in 1:length(var.names_cont0)) {
+    xv <- forest.data[,var.names_cont0[i]]
+    xv <- as.numeric(xv)
+    n.pt <- 20
+    x.pt <- seq(min(xv), max(xv), length = n.pt)
+    y.pt <- numeric(length(x.pt))
+    n <- nrow(forest.data) 
+    ylab <- c("p(x=4)","p(x=5)","p(x=6)","p(x=7)","p(x=8)","p(x=9)","p(x=10)")
+    par(mfrow=c(2,4))
+    for (j in 4:10) {
+     for (k in seq(along = x.pt)) {
+       focus <- j-3 #class (of y)
+       x.data <- forest.data
+       x.data[, var.names_cont0[i]] <- rep(x.pt[k], n)
+       pr <- predict(ordforest.0, x.data, type = "prob")$classprobs
+       y.pt[k] <- mean(pr[, focus])
+     }
+     plot(x.pt, y.pt, type = "l", xlab=var.names_cont0[i], ylab=ylab[j-3])
+    }
+}
+
+```
+```{r}
+for (i in 1:length(var.names_cat)) {
+    xv <- forest.data[,var.names_cat[i]]
+    x.pt <- levels(xv)
+    y.pt <- numeric(length(x.pt))
+    n <- nrow(forest.data) 
+    ylab <- c("p(x=4)","p(x=5)","p(x=6)","p(x=7)","p(x=8)","p(x=9)","p(x=10)")
+    par(mfrow=c(2,4))
+    for (j in 4:10) {
+      for (k in seq(along = x.pt)) {
+        focus <- j-3 #class (of y)
+        x.data <- forest.data
+        x.data[, var.names_cat[i]] <- factor(rep(x.pt[k], n), levels = x.pt)
+        pr <- predict(ordforest.1, x.data, type = "prob")$classprobs
+        y.pt[k] <- mean(pr[, focus])
+      }
+      barplot(y.pt, width=rep(1, length(y.pt)), col="blue",
+              xlab = var.names_cat[i], ylab = ylab[j-3], names.arg=x.pt)
+    }
+}
+
+
+for (i in 1:length(var.names_cont1)) {
+    xv <- forest.data[,var.names_cont1[i]]
+    xv <- as.numeric(xv)
+    n.pt <- 20
+    x.pt <- seq(min(xv), max(xv), length = n.pt)
+    y.pt <- numeric(length(x.pt))
+    n <- nrow(forest.data) 
+    ylab <- c("p(x=4)","p(x=5)","p(x=6)","p(x=7)","p(x=8)","p(x=9)","p(x=10)")
+    par(mfrow=c(2,4))
+    for (j in 4:10) {
+     for (k in seq(along = x.pt)) {
+       focus <- j-3 #class (of y)
+       x.data <- forest.data
+       x.data[, var.names_cont1[i]] <- rep(x.pt[k], n)
+       pr <- predict(ordforest.1, x.data, type = "prob")$classprobs
+       y.pt[k] <- mean(pr[, focus])
+     }
+     plot(x.pt, y.pt, type = "l", xlab=var.names_cont1[i], ylab=ylab[j-3])
+    }
+}
+```
+```{r}
+for (i in 1:length(var.names_cat)) {
+    xv <- forest.data[,var.names_cat[i]]
+    x.pt <- levels(xv)
+    y.pt <- numeric(length(x.pt))
+    n <- nrow(forest.data) 
+    ylab <- c("p(x=4)","p(x=5)","p(x=6)","p(x=7)","p(x=8)","p(x=9)","p(x=10)")
+    par(mfrow=c(2,4))
+    for (j in 4:10) {
+      for (k in seq(along = x.pt)) {
+        focus <- j-3 #class (of y)
+        x.data <- forest.data
+        x.data[, var.names_cat[i]] <- factor(rep(x.pt[k], n), levels = x.pt)
+        pr <- predict(ordforest.2, x.data, type = "prob")$classprobs
+        y.pt[k] <- mean(pr[, focus])
+      }
+      barplot(y.pt, width=rep(1, length(y.pt)), col="blue",
+              xlab = var.names_cat[i], ylab = ylab[j-3], names.arg=x.pt)
+    }
+}
+
+
+for (i in 1:length(var.names_cont2)) {
+    xv <- forest.data[,var.names_cont2[i]]
+    xv <- as.numeric(xv)
+    n.pt <- 20
+    x.pt <- seq(min(xv), max(xv), length = n.pt)
+    y.pt <- numeric(length(x.pt))
+    n <- nrow(forest.data) 
+    ylab <- c("p(x=4)","p(x=5)","p(x=6)","p(x=7)","p(x=8)","p(x=9)","p(x=10)")
+    par(mfrow=c(2,4))
+    for (j in 4:10) {
+     for (k in seq(along = x.pt)) {
+       focus <- j-3 #class (of y)
+       x.data <- forest.data
+       x.data[, var.names_cont2[i]] <- rep(x.pt[k], n)
+       pr <- predict(ordforest.2, x.data, type = "prob")$classprobs
+       y.pt[k] <- mean(pr[, focus])
+     }
+     plot(x.pt, y.pt, type = "l", xlab=var.names_cont2[i], ylab=ylab[j-3])
+    }
+}
+```

@@ -1,0 +1,36 @@
+%-----------------------------------------------------------------------------
+% CONCLUSION
+%-----------------------------------------------------------------------------
+\section{Conclusions}
+\label{sec:conclusions}
+\color{black}
+In this work, a method called Ordinal Mixed-Effects Random Forest (OMERF) is introduced. 
+This approach innovatively extends the application of random forest to the analysis of hierarchical data, specifically for ordinal response variables.
+The OMERF model replaces the linear combination of fixed-effect covariates in a cumulative linear mixed model with a random forest.
+This novel approach makes a valuable contribution to the statistical literature on aggregated models combining mixed-effects models and tree-based methods.
+It inherits the flexibility and predictive power of random forests while preserving the structure of mixed-effects models for ordinal response.
+
+To show the performance of the proposed model simulation study is performed. Subsequently, OMERF algorithm is applied to a real world dataset containing  all the personal information stored in the school's electronic register of a prestigious high school in Milan, in order to identify students who may be at risk of failure and generally of predicting their academic progress.
+
+In the simulation study, the performance of the proposed mixed-effects tree-based method was a clear improvement compared to CLM and CLMM models when the data generating process features nonlinear patterns.
+In addition, the predictive power of the OMERF model was comparable to the one of the ordinal random forest model.
+Overall, the main advantages of the OMERF algorithm are its flexibility and data inspection capability.
+By relaxing the linear assumption of the fixed-effects part, the method could model more complex functional forms, detecting also potential interactions
+among covariates, for both categorical and continuous variables.
+
+For this reason, the decision to use OMERF over CLMM depends on the complexity of the fixed effects structure, which is often not known in advance.
+If fixed-effect covariates exhibit a linear association with the response and are not correlated, CLMM is expected to perform better.
+Conversely, if the covariate set is large, and the covariates potentially interact, creating complex patterns in their association with the response, OMERF is expected to outperform parametric methods with predefined functional forms.
+At the same time, when data present a hierarchy, the method is able to take into account the dependence structure within observations and to model it.
+In the educational data mining context, this aspect is essential in order to better understand students and the settings in which they learn.
+
+In conclusion, OMERF proves to be a powerful and an easily interpretable method, that can deal with a grouped data structure and can be applied to various complex real data challenges.
+
+In the case study, we give a contribution to the learning analytics area. OMERF method, when applied to educational data, can be a useful tool to support the definition of best practices and
+new tutoring programmes aimed at enhancing student performances and helping students at risk. 
+
+
+However, a potential limitation of the OMERF algorithm stems from the initial step where, during the first initialization, the method estimates the target values (\(\eta_{ijc}\)) through a CLM.
+This model imposes a linear effect of covariates on a transformation of the response thereby potentially losing the intricacies that the random forest could capture in the subsequent step of the algorithm.
+Therefore, a hint for further developments might be to consider using a different model that can successfully capture nonlinear relationships and interactions between covariates and help initialize the \(\eta_{ijc}\) estimates, thereby allowing the OMERF method to perform at its best.
+

@@ -1,0 +1,18 @@
+SCRIPT CONTROLLATI:
+
+in dati:
+- OMERF_new ultima versione omerf (inizializzazione eta con odinal forest)
+- index, ord_class_index script per indici Ballante e Cardoso
+- build_dataset_lin, build_dataset, build_dataset_slope script per la creazione dei dataset per il simualtion study
+- dataset OECD Pisa 2022
+
+in sim_study:
+- simulation_script_lin, simulation_script, simulation_script_slope script per il simulation study (da far runnare di nuovo per avere i risultati finali da inserire nel latex)
+- model_plot_lin, model_plot, model_plot_slope singola run dei simulation study per eventuali plot (da far runnare a seconda di cosa vogliamo inserire)
+
+in case_study:
+- applicazione OMERF a OECD Pisa 2022 (con risposta di 7 e 3 livelli)
+
+SCRIPT MANCANTI:
+- exploration analysis per eventuali plot sul dataset
+

@@ -1,0 +1,68 @@
+This is BibTeX, Version 0.99d
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: main.aux
+Reallocating 'name_of_file' (item size: 1) to 6 items.
+The style file: plain.bst
+Reallocating 'name_of_file' (item size: 1) to 11 items.
+A level-1 auxiliary file: Thesis.aux
+Reallocating 'name_of_file' (item size: 1) to 19 items.
+A level-1 auxiliary file: 1.Introduction.aux
+Reallocating 'name_of_file' (item size: 1) to 24 items.
+A level-1 auxiliary file: 2.Literature_review.aux
+Reallocating 'name_of_file' (item size: 1) to 14 items.
+A level-1 auxiliary file: 3.Methods.aux
+Reallocating 'name_of_file' (item size: 1) to 23 items.
+A level-1 auxiliary file: 4.Simulation_study.aux
+Reallocating 'name_of_file' (item size: 1) to 17 items.
+A level-1 auxiliary file: 5.Case_study.aux
+Reallocating 'name_of_file' (item size: 1) to 18 items.
+A level-1 auxiliary file: 6.Conclusions.aux
+Reallocating 'name_of_file' (item size: 1) to 19 items.
+A level-1 auxiliary file: 7.Bibliography.aux
+Reallocating 'name_of_file' (item size: 1) to 17 items.
+Reallocating 'name_of_file' (item size: 1) to 17 items.
+A level-1 auxiliary file: 8.Appendix_A.aux
+Database file #1: bibliography.bib
+Warning--can't use both volume and number fields in wibawa2021learning
+You've used 35 entries,
+            2118 wiz_defined-function locations,
+            730 strings with 10184 characters,
+and the built_in function-call counts, 11319 in all, are:
+= -- 1136
+> -- 514
+< -- 5
++ -- 206
+- -- 168
+* -- 820
+:= -- 1919
+add.period$ -- 107
+call.type$ -- 35
+change.case$ -- 183
+chr.to.int$ -- 0
+cite$ -- 36
+duplicate$ -- 402
+empty$ -- 883
+format.name$ -- 168
+if$ -- 2316
+int.to.chr$ -- 0
+int.to.str$ -- 35
+missing$ -- 36
+newline$ -- 178
+num.names$ -- 70
+pop$ -- 161
+preamble$ -- 1
+purify$ -- 153
+quote$ -- 0
+skip$ -- 276
+stack$ -- 0
+substring$ -- 772
+swap$ -- 59
+text.length$ -- 5
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 132
+warning$ -- 1
+while$ -- 119
+width$ -- 37
+write$ -- 386
+(There was 1 warning)
