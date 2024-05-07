@@ -6,7 +6,7 @@ date: "2024-01-31"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "D:/magistrale/tesi/Master_Thesis/Def_files/dati")
+knitr::opts_knit$set(root.dir = "D:/magistrale/OMERF/Def_files/dati")
 ```
 
 Read the dataset, create datasets for training and testing and import the omerf function and its methods
@@ -249,12 +249,12 @@ performance measures
 ```{r}
 library(pdfCluster)
 library(psych)
-results.acc=matrix(nrow=2, ncol=4, data=rep(0,12))
-results.mse=matrix(nrow=2, ncol=4, data=rep(0,12))
-results.oc=matrix(nrow=2, ncol=4, data=rep(0,12))
-results.ari=matrix(nrow=2, ncol=4, data=rep(0,12))
-results.ck=matrix(nrow=2, ncol=4, data=rep(0,12))
-results.newi=matrix(nrow=2, ncol=4, data=rep(0,12))
+results.acc=matrix(nrow=2, ncol=4, data=rep(0,8))
+results.mse=matrix(nrow=2, ncol=4, data=rep(0,8))
+results.oc=matrix(nrow=2, ncol=4, data=rep(0,8))
+results.ari=matrix(nrow=2, ncol=4, data=rep(0,8))
+results.ck=matrix(nrow=2, ncol=4, data=rep(0,8))
+results.newi=matrix(nrow=2, ncol=4, data=rep(0,8))
 colnames(results.acc)=c('clm', 'clmm','ordforest', 'omerf')
 colnames(results.mse)=c('clm', 'clmm','ordforest', 'omerf')
 colnames(results.oc)=c('clm', 'clmm','ordforest', 'omerf')
@@ -405,3 +405,35 @@ for (i in 1:length(var.names)) {
   partialPlot(om.1$forest.model, pred.data=forest.data,x.var=var.names[i],xlab=var.names[i],main='Partial dependence plot')
 }
 ```
+
+Feature importance - iml
+
+```{r}
+library("iml")
+library("ggplot2")
+mod0 <- Predictor$new(om.0$forest.model, data = cov[, -which(names(cov) %in% c("ESCS"))], y = om.0$rf.target)
+imp0 <- FeatureImp$new(mod0, loss = "mse")
+plot(imp0)
+```
+
+```{r}
+mod1 <- Predictor$new(om.1$forest.model, data = cov, y = om.1$rf.target)
+imp1 <- FeatureImp$new(mod1, loss = "mse")
+plot(imp1)
+```
+
+PARTIAL PLOT - iml
+
+```{r}
+
+mod01 <- Predictor$new(om.0$forest.model, data = cov[, -which(names(cov) %in% c("ESCS"))])
+effs0 <- FeatureEffects$new(mod01)
+plot(effs0) #effs0$plot()
+```
+
+```{r}
+mod11 <- Predictor$new(om.1$forest.model, data = cov)
+effs1 <- FeatureEffects$new(mod11)
+plot(effs1)
+```
+

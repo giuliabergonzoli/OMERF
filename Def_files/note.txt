@@ -7,12 +7,9 @@ in dati:
 - dataset OECD Pisa 2022
 
 in sim_study:
-- simulation_script_lin, simulation_script, simulation_script_slope script per il simulation study (da far runnare di nuovo per avere i risultati finali da inserire nel latex)
-- model_plot_lin, model_plot, model_plot_slope singola run dei simulation study per eventuali plot (da far runnare a seconda di cosa vogliamo inserire)
+- simulation_script_lin, simulation_script, simulation_script_slope script per il simulation study
+- model_plot_lin, model_plot, model_plot_slope singola run dei simulation study per eventuali plot
 
 in case_study:
 - applicazione OMERF a OECD Pisa 2022 (con risposta di 7 e 3 livelli)
-
-SCRIPT MANCANTI:
-- exploration analysis per eventuali plot sul dataset
 

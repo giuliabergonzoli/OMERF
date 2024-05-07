@@ -6,7 +6,7 @@ date: "2023-10-11"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "D:/magistrale/tesi/Master_Thesis/Def_files/dati")
+knitr::opts_knit$set(root.dir = "D:/magistrale/OMERF/Def_files/dati")
 ```
 
 Read the dataset, create datasets for training and testing and import the omerf function and its methods
