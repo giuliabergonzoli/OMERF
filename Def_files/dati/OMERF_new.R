@@ -54,7 +54,7 @@ omerf= function (y, cov, group, xnam=NULL, znam=NULL, bizero=NULL,
   else {clmm.formula=as.formula(paste("y ~ offset(eta.est.rf) + ( 1 | group)"))}
   
   ##################################################
-  ####	STEP 2: CLM per inizializzare mu_ij  #######
+  ####	STEP 2: OF for eta_ijc initialization ######
   ##################################################
   
   library(ordinal)
