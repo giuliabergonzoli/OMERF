@@ -199,23 +199,23 @@ ord.re3 <- order(omerf.mod$clmm.model$ranef)
 PARTIAL PLOT - random forest (omerf)
 
 ```{r}
-forest.data=cbind(omerf.mod$rf.target, cov)
-par(mfrow=c(2,3))
-partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x1")
-partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x2")
-partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x3")
-partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x4")
-partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x5")
-partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x6")
-partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x7")
+# forest.data=cbind(omerf.mod$rf.target, cov)
+# par(mfrow=c(2,3))
+# partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x1")
+# partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x2")
+# partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x3")
+# partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x4")
+# partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x5")
+# partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x6")
+# partialPlot(omerf.mod$forest.model, pred.data=forest.data, x.var="x7")
 ```
 
 ```{r}
 library("iml")
 library("ggplot2")
 mod11 <- Predictor$new(omerf.mod$forest.model, data = cov)
-effs1 <- FeatureEffects$new(mod11)
-plot(effs1)
+effs1 <- FeatureEffects$new(mod11, method = "pdp")
+plot(effs1, fixed_y = FALSE)
 ```
 
 PARTIAL PLOT - ordinal forest
