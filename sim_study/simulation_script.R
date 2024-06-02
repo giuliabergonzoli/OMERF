@@ -1,4 +1,3 @@
-setwd("D:/magistrale/tesi/Master_Thesis/Def_files/dati")
 library(ordinal)
 library(randomForest)
 library(ordinalForest)
@@ -31,7 +30,7 @@ nruns=100
 n= 1000#number of data to use (test+train)
 prop=0.8 #proportion of data going into the train set
 
-source('OMERF_new.R')
+source('OMERF.R')
 source('build_dataset.R')
 source('ord_class_index.R')
 source('index.R')
@@ -307,13 +306,13 @@ results.newi[3,4]=max(newi.omerf)
 results.newi[4,4]=min(newi.omerf)
 
 # save the results
-r=4
-name.acc=paste('risultati_acc_',r,'.txt', sep='')
-name.mse=paste('risultati_mse_',r,'.txt', sep='')
-name.oc=paste('risultati_oc_',r,'.txt', sep='')
-name.ari=paste('risultati_ari_',r,'.txt', sep='')
-name.ck=paste('risultati_ck_',r,'.txt', sep='')
-name.newi=paste('risultati_newi_',r,'.txt', sep='')
+r=1
+name.acc=paste('results_acc_',r,'.txt', sep='')
+name.mse=paste('results_mse_',r,'.txt', sep='')
+name.oc=paste('results_oc_',r,'.txt', sep='')
+name.ari=paste('results_ari_',r,'.txt', sep='')
+name.ck=paste('results_ck_',r,'.txt', sep='')
+name.newi=paste('results_newi_',r,'.txt', sep='')
 write.table(results.acc, file=name.acc)
 write.table(results.mse, file=name.mse)
 write.table(results.oc, file=name.oc)

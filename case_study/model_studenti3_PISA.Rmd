@@ -1,5 +1,5 @@
 ---
-title: "model_studenti"
+title: "model_studenti3"
 output: html_document
 date: "2024-01-31"
 ---
@@ -12,7 +12,7 @@ knitr::opts_knit$set(root.dir = "D:/magistrale/OMERF/Def_files/dati")
 Read the dataset, create datasets for training and testing and import the omerf function and its methods
 
 ```{r}
-source("OMERF_new.R")
+source("OMERF.R")
 source("ord_class_index.R")
 source('index.R')
 studenti <- read.csv("student_ita.csv", sep = ",", dec = ".") #10552
@@ -67,8 +67,8 @@ data_test <- data_test_orig[,c("grade", "gender", "immig", "video_games", "inter
 studenti_new <- studenti_new[split_indices, ]
 
 
-y_test_orig=data_test_orig$mate9 #mate3
-y=studenti_new$mate9
+y_test_orig=data_test_orig$mate3 #mate3
+y=studenti_new$mate3
 cov=studenti_new[,c("grade", "gender", "immig", "video_games", "internet_quality", "internet_availability", "SCHRISK", "BULLIED", "BELONG", "COOPAGR", "TEACHSUP", "FAMSUP", "PERSEVAGR", "ASSERAGR", "EMPATAGR", "EMOCOAGR", "STRESAGR", "CURIOAGR", "study_time", "HISCED", "ESCS")]
 group=studenti_new$school_ID
 
@@ -210,15 +210,11 @@ VarCorr(om.1$clmm.model)
 
 #varimp
 library(caret)
-varImp(om.0$forest.model)
 importance(om.0$forest.model, type=1)
 importance(om.0$forest.model, type=2)
-varImpPlot(om.0$forest.model)
 
-varImp(om.1$forest.model)
 importance(om.1$forest.model, type=1)
 importance(om.1$forest.model, type=2)
-varImpPlot(om.1$forest.model)
 
 # TEST
 y_omerf_t.0 = predict.omerf(om.0, y, data_test, data_test$group, type='response')
@@ -242,6 +238,32 @@ ord.re
 ranef.omerf(om.1,group)
 ord.re2 <- order(om.1$clmm.model$ranef)
 ord.re2
+```
+
+Random Effects - CLMM
+
+```{r}
+ci <- clmm.0$ranef + qnorm(0.975) * sqrt(clmm.0$condVar) %o% c(-1, 1)
+ord.re <- order(clmm.0$ranef)
+lev <- levels(group)
+ci <- ci[order(clmm.0$ranef),]
+plot(1:length(lev), clmm.0$ranef[ord.re], axes=FALSE, ylim=range(ci),
+     xlab="group", ylab="group effect")
+axis(1, at=1:length(lev), labels = lev[ord.re])
+axis(2)
+for(i in 1:length(lev)) segments(i, ci[i,1], i, ci[i, 2])
+abline(h = 0, lty=2)
+
+ci <- clmm.1$ranef + qnorm(0.975) * sqrt(clmm.1$condVar) %o% c(-1, 1)
+ord.re <- order(clmm.1$ranef)
+lev <- levels(group)
+ci <- ci[order(clmm.1$ranef),]
+plot(1:length(lev), clmm.1$ranef[ord.re], axes=FALSE, ylim=range(ci),
+     xlab="group", ylab="group effect")
+axis(1, at=1:length(lev), labels = lev[ord.re])
+axis(2)
+for(i in 1:length(lev)) segments(i, ci[i,1], i, ci[i, 2])
+abline(h = 0, lty=2)
 ```
 
 performance measures
@@ -387,25 +409,6 @@ results.ck
 results.newi
 ```
 
-PARTIAL PLOT - random forest (da omerf)
-
-```{r}
-var.names=c("grade", "gender", "immig", "video_games", "internet_quality", "internet_availability", "SCHRISK", "BULLIED", "BELONG", "COOPAGR", "TEACHSUP", "FAMSUP", "PERSEVAGR", "ASSERAGR", "EMPATAGR", "EMOCOAGR", "STRESAGR", "CURIOAGR", "study_time", "HISCED")
-par(mfrow=c(2,4))
-for (i in 1:length(var.names)) {
-  partialPlot(om.0$forest.model, pred.data=forest.data,x.var=var.names[i],xlab=var.names[i],main='Partial dependence plot')
-}
-```
-
-
-```{r}
-var.names=c("grade", "gender", "immig", "video_games", "internet_quality", "internet_availability", "SCHRISK", "BULLIED", "BELONG", "COOPAGR", "TEACHSUP", "FAMSUP", "PERSEVAGR", "ASSERAGR", "EMPATAGR", "EMOCOAGR", "STRESAGR", "CURIOAGR", "study_time", "HISCED", "ESCS")
-par(mfrow=c(2,4))
-for (i in 1:length(var.names)) {
-  partialPlot(om.1$forest.model, pred.data=forest.data,x.var=var.names[i],xlab=var.names[i],main='Partial dependence plot')
-}
-```
-
 Feature importance - iml
 
 ```{r}
@@ -427,13 +430,13 @@ PARTIAL PLOT - iml
 ```{r}
 
 mod01 <- Predictor$new(om.0$forest.model, data = cov[, -which(names(cov) %in% c("ESCS"))])
-effs0 <- FeatureEffects$new(mod01)
-plot(effs0) #effs0$plot()
+effs0 <- FeatureEffects$new(mod01, method = "pdp") #, grid.size = 10
+plot(effs0, nrows = 6, ncols = 4, fixed_y = FALSE)
 ```
 
 ```{r}
 mod11 <- Predictor$new(om.1$forest.model, data = cov)
-effs1 <- FeatureEffects$new(mod11)
-plot(effs1)
+effs1 <- FeatureEffects$new(mod11, method = "pdp")
+plot(effs1, nrows = 6, ncols = 4, fixed_y = FALSE)
 ```
 

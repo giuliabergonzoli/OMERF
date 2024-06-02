@@ -1,4 +1,3 @@
-setwd("D:/magistrale/tesi/Master_Thesis/Def_files/dati")
 library(ordinal)
 library(randomForest)
 library(ordinalForest)
@@ -31,8 +30,8 @@ nruns=100
 n= 1000#number of data to use (test+train)
 prop=0.8 #proportion of data going into the train set
 
-source('OMERF_new.R')
-source('build_dataset_slope.R')
+source('OMERF.R')
+source('build_dataset_lin.R')
 source('ord_class_index.R')
 source('index.R')
 
@@ -65,7 +64,7 @@ for(nr in 1:nruns) {
   set.seed(nr)
   print(nr)
   # train set preparation
-  dati=build.dataset(n,1,1,prop)
+  dati=build.dataset(n,5,prop)
   y=factor(dati$y.train)
   cov=dati$cov.train
   gr=factor(dati$group.train)
@@ -80,11 +79,11 @@ for(nr in 1:nruns) {
   
   # build all 4 models
   clm.data=data.frame(covd,y)
-  clm.mod=clm(y ~ x1+x2+x3+x4+x5+x6+x7+d2+d3+d4+d5+d6+d7+d8+d9+d10 , data=clm.data, link='logit') #d1: base case
-  for.data=data.frame(cov,y,gr)
+  clm.mod=clm(y ~ x1+x2+x3+d2+d3+d4+d5+d6+d7+d8+d9+d10 , data=clm.data, link='logit') #d1: base case
+  for.data=data.frame(cov[,c('x1','x2','x3')],y,gr)
   ordfor.mod=ordfor(depvar = 'y', perffunction = 'probability', for.data)
-  clmm.mod=clmm(y ~ x1+x2+x3+x4+x5+x6+x7+(1+x1|gr), link='logit', data=for.data, Hess=TRUE, control=clmm.control(maxLineIter = 500, maxIter=1000, grtol=1e-3))
-  omerf.mod=omerf(y=y, cov=cov, group=gr, znam=c('x1'))
+  clmm.mod=clmm(y ~ x1+x2+x3+(1|gr), link='logit', data=for.data, Hess=TRUE, control=clmm.control(maxLineIter = 500, maxIter=1000, grtol=1e-3))
+  omerf.mod=omerf(y, cov[,c('x1','x2','x3')], gr)
   
   # test set preparation
   y.t=factor(dati$y.test)
@@ -153,19 +152,18 @@ for(nr in 1:nruns) {
   eta_clmm_t=as.data.frame(matrix(0, dim(test.data)[1], length(lev)))
   names(mu_clmm_t) = lev
   names(eta_clmm_t) = lev
-  ranef=rowSums(ranef(clmm.mod)$gr)
   for (c in lev) {
     for (j in 1:dim(test.data)[1]) {
       if (c==lev[1]) {
-        eta_clmm_t[j,c]=as.numeric(clmm.mod$Theta[which(lev==c)]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - test.data$x4[j] * clmm.mod$beta[4] - test.data$x5[j] * clmm.mod$beta[5] - test.data$x6[j] * clmm.mod$beta[6] - test.data$x7[j] * clmm.mod$beta[7] - ranef[test.data$gr[j]]
+        eta_clmm_t[j,c]=as.numeric(clmm.mod$Theta[which(lev==c)]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - clmm.mod$ranef[test.data$gr[j]]
         mu_clmm_t[j,c]=plogis(eta_clmm_t[j,c])
       } else if(c==lev[length(lev)]) {
         eta_clmm_t[j,c]=qlogis(0.999999)
-        mu_clmm_t[j,c]=1 - plogis(as.numeric(clmm.mod$Theta[which(lev==c)-1]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - test.data$x4[j] * clmm.mod$beta[4] - test.data$x5[j] * clmm.mod$beta[5] - test.data$x6[j] * clmm.mod$beta[6]- test.data$x7[j] * clmm.mod$beta[7] - ranef[test.data$gr[j]])
+        mu_clmm_t[j,c]=1 - plogis(as.numeric(clmm.mod$Theta[which(lev==c)-1]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - clmm.mod$ranef[test.data$gr[j]])
       } else {
-        eta_clmm_t[j,c]=as.numeric(clmm.mod$Theta[which(lev==c)]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - test.data$x4[j] * clmm.mod$beta[4] - test.data$x5[j] * clmm.mod$beta[5] - test.data$x6[j] * clmm.mod$beta[6]- test.data$x7[j] * clmm.mod$beta[7] - ranef[test.data$gr[j]]
+        eta_clmm_t[j,c]=as.numeric(clmm.mod$Theta[which(lev==c)]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - clmm.mod$ranef[test.data$gr[j]]
         mu_clmm_t[j,c]=plogis(eta_clmm_t[j,c]) -
-          plogis(as.numeric(clmm.mod$Theta[which(lev==c)-1]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - test.data$x4[j] * clmm.mod$beta[4] - test.data$x5[j] * clmm.mod$beta[5] - test.data$x6[j] * clmm.mod$beta[6]- test.data$x7[j] * clmm.mod$beta[7] - ranef[test.data$gr[j]])
+          plogis(as.numeric(clmm.mod$Theta[which(lev==c)-1]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - clmm.mod$ranef[test.data$gr[j]])
       }
     }
     
@@ -308,13 +306,13 @@ results.newi[3,4]=max(newi.omerf)
 results.newi[4,4]=min(newi.omerf)
 
 # save the results
-r=8
-name.acc=paste('risultati_acc_',r,'.txt', sep='')
-name.mse=paste('risultati_mse_',r,'.txt', sep='')
-name.oc=paste('risultati_oc_',r,'.txt', sep='')
-name.ari=paste('risultati_ari_',r,'.txt', sep='')
-name.ck=paste('risultati_ck_',r,'.txt', sep='')
-name.newi=paste('risultati_newi_',r,'.txt', sep='')
+r=1
+name.acc=paste('results_acc_',r,'.txt', sep='')
+name.mse=paste('results_mse_',r,'.txt', sep='')
+name.oc=paste('results_oc_',r,'.txt', sep='')
+name.ari=paste('results_ari_',r,'.txt', sep='')
+name.ck=paste('results_ck_',r,'.txt', sep='')
+name.newi=paste('results_newi_',r,'.txt', sep='')
 write.table(results.acc, file=name.acc)
 write.table(results.mse, file=name.mse)
 write.table(results.oc, file=name.oc)
