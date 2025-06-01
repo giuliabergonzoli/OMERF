@@ -12,7 +12,7 @@ The arXive of the paper (arXiv:2406.03130 [stat.ME]) is available at http://arxi
 
 ## Methodology
 
-OMERF models the fixed effects through a random forest, combining them to the random effects obtained using a CLMM. The model can be formulated as follow:
+OMERF models the fixed effects through a random forest, combining them to the random effects obtained using a Cumulative Link Mixed Model (CLMM). The model can be formulated as follow:
 ```math
     \begin{aligned}
         \eta_{ijc}  = g(\gamma_{ijc}) &= \theta_{c} - (f(\mathbf{x}_{ij}) + \mathbf{z}_{ij}^T \mathbf{b}_{i})\\
