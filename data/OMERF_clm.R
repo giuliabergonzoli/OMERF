@@ -1,4 +1,4 @@
-omerf= function (y, cov, group, xnam=NULL, znam=NULL, bizero=NULL, 
+omerf_clm= function (y, cov, group, xnam=NULL, znam=NULL, bizero=NULL, 
                  itmax=100, toll=0.05) {
   #ordinal mixed-effects random forest (OMERF)
   #inputs: 
@@ -124,7 +124,7 @@ omerf= function (y, cov, group, xnam=NULL, znam=NULL, bizero=NULL,
 }
 
 
-summary.omerf=function(om) {
+summary.omerf_clm=function(om) {
   print('Mixed effects model') #summary of the mixed effects model
   print(summary(om$clmm.model)) 
   str=ifelse(om$converged, 'Converged', 'Did not converge')
@@ -133,7 +133,7 @@ summary.omerf=function(om) {
 
 
 
-fitted.omerf=function(om, group, type='response') {
+fitted.omerf_clm=function(om, group, type='response') {
   #the correct fitted values are already those of the clmm function,
   #as they incorporate the fitted values of the random forest into the model
   mu_avg=om$clmm.model$fitted.values #for an avg random effect
@@ -171,7 +171,7 @@ fitted.omerf=function(om, group, type='response') {
 
 
 
-predict.omerf=function(om, y_train, newdata, group, type='response', 
+predict.omerf_clm=function(om, y_train, newdata, group, type='response', 
                        predict.all=FALSE) {
   forest.data=newdata[om$forest.var]		
   f.x_ij=predict(om$forest.model,forest.data,predict.all=predict.all)
@@ -216,7 +216,7 @@ predict.omerf=function(om, y_train, newdata, group, type='response',
 
 
 
-ranef.omerf=function(om, group, znam=NULL) {
+ranef.omerf_clm=function(om, group, znam=NULL) {
   ranef=ranef(om$clmm.model)$gr
   n = (length(znam)+1)*length(levels(group))
   step = length(levels(group))

@@ -15,7 +15,7 @@ treef=function(a,b,c) {
 }
 
 
-build.dataset=function (n,sigma, prop) {
+build.dataset=function (nr,sigma, prop) {
   #param=matrix with parameters
   #j=parameter line to be used
   #n=number of data to generate (train+test)
@@ -23,35 +23,31 @@ build.dataset=function (n,sigma, prop) {
   #random intercept
   gen.randInt <- defData(varname = "bi", dist = "normal", formula = 0, variance = sigma,
                          id = "group")
-  gen.randInt <- defData(gen.randInt,varname = "clustSize", formula = n, dist = "clusterSize")
-  dtRandom <- genData(10, gen.randInt)
-  head(dtRandom, 10)
+  # gen.randInt <- defData(gen.randInt,varname = "clustSize", formula = n, dist = "clusterSize")
+  # dtRandom <- genData(15, gen.randInt)
+  # head(dtRandom, 15)
+  gen.randInt <- defData(gen.randInt, varname = "clustSize", dist = "uniformInt", formula = "50;100")
   
-  # normal and uniform covariates
+  set.seed(nr)
+  dtRandom <- genData(15, gen.randInt)
+  
+  # normal covariates
   gen.obs <- defDataAdd(varname = "x1", dist = "normal",
                         formula =  0, variance = 1)
   gen.obs <- defDataAdd(gen.obs, varname = "x2", dist = "normal", 
                         formula = 0, variance = 1)
   gen.obs <- defDataAdd(gen.obs, varname = "x3", dist = "normal", 
                         formula = 0, variance = 1)
-  gen.obs <- defDataAdd(gen.obs, varname = "x4", dist = "uniform",
-                        formula =  "-3;3")
-  gen.obs <- defDataAdd(gen.obs, varname = "x5", dist = "uniform",
-                        formula =  "-6;6")
-  gen.obs <- defDataAdd(gen.obs, varname = "x6", dist = "uniform",
-                        formula =  "-5;5")
-  gen.obs <- defDataAdd(gen.obs, varname = "x7", dist = "uniform",
-                        formula =  "-4;4")
   dtObs <- genCluster(dtRandom, cLevelVar = "group", numIndsVar = "clustSize",
                       level1ID = "id")
   dtObs <- addColumns(gen.obs, dtObs)
   
   gen.z <- defDataAdd(varname = "z",
-                      formula = "0.7*(3 + 7*x1^2 -5*x2 + x2*x3^2) + 0.3*treef(x4,x5,x6) + bi", dist = "nonrandom")
+                      formula = "3 + 7*x1 -5*x2 + x2*x3 + bi", dist = "nonrandom")
   
   dtObs2 <- addColumns(gen.z, dtObs)
   
-  baseprobs <- c(5/12,6/12,1/12)
+  baseprobs <- c(0.32, 0.36, 0.29, 0.03)
   data <- genOrdCat(dtObs2, adjVar = 'z', baseprobs = baseprobs, catVar = "y")
   data <- as.data.frame(data)
   
@@ -60,7 +56,7 @@ build.dataset=function (n,sigma, prop) {
   
   library(caret)
   split_indices <- createDataPartition(data$y, p = prop, list = FALSE)
-  cov=data[,c('x1','x2','x3','x4','x5','x6','x7')]
+  cov=data[,c('x1','x2','x3')]
   cov.test=cov[-split_indices,]
   cov.train=cov[split_indices,]
   y=data[,c('y')]

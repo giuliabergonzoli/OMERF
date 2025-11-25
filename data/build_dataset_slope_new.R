@@ -15,7 +15,7 @@ treef=function(a,b,c) {
 }
 
 
-build.dataset=function (n,sigma1,sigma2, prop) {
+build.dataset=function (nr,sigma1,sigma2, prop) {
   #param=matrix with parameters
   #j=parameter line to be used
   #n=number of data to generate (train+test)
@@ -24,9 +24,12 @@ build.dataset=function (n,sigma1,sigma2, prop) {
   gen.rand <- defData(varname = "b0i", dist = "normal", formula = 0, variance = sigma1,
                          id = "group")
   gen.rand <- defData(gen.rand, varname = "b1i", dist = "normal", formula = 0, variance = sigma2, id = "group")
-  gen.rand <- defData(gen.rand,varname = "clustSize", formula = n, dist = "clusterSize")
-  dtRandom <- genData(10, gen.rand)
-  head(dtRandom, 10)
+  # gen.rand <- defData(gen.rand,varname = "clustSize", formula = n, dist = "clusterSize")
+  gen.rand <- defData(gen.rand, varname = "clustSize", dist = "uniformInt", formula = "50;100")
+  
+  set.seed(nr)
+  dtRandom <- genData(15, gen.rand)
+  head(dtRandom, 15)
   
   # normal  and uniform covariates
   gen.obs <- defDataAdd(varname = "x1", dist = "normal",
@@ -52,7 +55,7 @@ build.dataset=function (n,sigma1,sigma2, prop) {
   
   dtObs2 <- addColumns(gen.z, dtObs)
   
-  baseprobs <- c(5/12,6/12,1/12)
+  baseprobs <- c(0.32, 0.36, 0.29, 0.03)
   data <- genOrdCat(dtObs2, adjVar = 'z', baseprobs = baseprobs, catVar = "y")
   data <- as.data.frame(data)
   
