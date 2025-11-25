@@ -23,7 +23,7 @@ OMERF models the fixed effects through a random forest, combining them to the ra
     \end{aligned}
 ```
 
-where $f(\boldsymbol{x}_ {ij})$ is the unknown and nonlinear structure estimated through the random forest, $\gamma_{ijc}$ are cumulative probabilities, $\pi_{ijc} = \mathbb{P}(y_{ij}=c) = \mathbb{P}(y_{ij} \leq c) - \mathbb{P}(y_{ij} \leq c-1) = logit^{-1}(\theta_{c} - (f(\mathbf{x}_ {ij}) + \mathbf{z}_ {ij}^T \mathbf{b}_ {i})) - logit^{-1}(\theta_ {c-1} - (f(\mathbf{x}_ {ij}) + \mathbf{z}_ {ij}^T \mathbf{b}_ {i}))$ is the probability that the $j$-th observation, within the $i$-th group, falls in the $c$-th category.
+where $f(\mathbf{x}_ {ij})$ is the unknown and nonlinear structure estimated through the random forest, $\gamma_{ijc}$ are cumulative probabilities, $\pi_{ijc} = \mathbb{P}(y_{ij}=c) = \mathbb{P}(y_{ij} \leq c) - \mathbb{P}(y_{ij} \leq c-1) = logit^{-1}(\theta_{c} - (f(\mathbf{x}_ {ij}) + \mathbf{z}_ {ij}^T \mathbf{b}_ {i})) - logit^{-1}(\theta_ {c-1} - (f(\mathbf{x}_ {ij}) + \mathbf{z}_ {ij}^T \mathbf{b}_ {i}))$ is the probability that the $j$-th observation, within the $i$-th group, falls in the $c$-th category.
 
 Similarly to CLMM model, OMERF model assumes that the random effects $\mathbf{b}_ i$ and $\mathbf{b}_ {i'}$ are independent for $i \neq i'$.
 
