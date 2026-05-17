@@ -1,18 +1,13 @@
 library(simstudy)
 treef=function(a,b,c) {
-	if(a<1) {
-		if(abs(c)<3) y= 2
-		else {
-			if(b<5) y=-2
-			else  y= 20
-		}
-	}
-	else {
-		if(b< -1) y=ifelse(c<0,1,-1)
-		else  y=0
-	}
-	y
+  ifelse(a < 1,
+         ifelse(abs(c) < 3, 2,
+                ifelse(b < 5, -2, 20)),
+         ifelse(b < -1,
+                ifelse(c < 0, 1, -1),
+                0))
 }
+
 
 
 build.dataset=function (nr,sigma, prop) {

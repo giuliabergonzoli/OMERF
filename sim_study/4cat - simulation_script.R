@@ -6,7 +6,7 @@ library(psych)
 
 source('OMERF_ranger.R')
 source('OMERF_clm_ranger.R')
-source('build_dataset_slope.R')
+source('build_dataset_4categories.R')
 source('ord_class_index.R')
 source('index.R')
 
@@ -79,20 +79,15 @@ weighted_kappa_safe <- function(y_true, y_pred, lev, weights = "quadratic") {
 # -------------------------------------------------------
 nruns <- 100
 n     <- 1000
-prop  <- 0.8
-r     <- 8
+prop  <- 0.8    # proportion of data going into the train set
+r     <- 3      # run index used in output file names
 
 # -------------------------------------------------------
-# Pre-allocate per-run result vectors for all 6 models:
-#   clm       — cumulative link model (fixed effects + group dummies)
-#   clmm      — cumulative link mixed model (random intercept + random slope on x1)
-#   ordfor    — ordinal random forest
-#   omerf     — OMERF with random slope on x1 (correctly specified)
-#   omerf_ri  — OMERF with random intercept only (simplified/misspecified)
-#   omerf_clm — OMERF with CLM initialization and random slope on x1
+# Pre-allocate per-run result vectors for all 5 models
 # Metrics: acc, mse, rmse, mae, oc, ari, ck, wk, newi, precision, recall
+# Extra for omerf and omerf_clm: n.iter, fit.time
 # -------------------------------------------------------
-models  <- c('clm', 'clmm', 'ordfor', 'omerf', 'omerf_ri', 'omerf_clm')
+models  <- c('clm', 'clmm', 'ordfor', 'omerf', 'omerf_clm')
 metrics <- c('acc', 'mse', 'rmse', 'mae', 'oc', 'ari', 'ck', 'wk', 'newi', 'precision', 'recall')
 
 runs <- setNames(
@@ -102,16 +97,15 @@ runs <- setNames(
 
 cms <- setNames(lapply(models, function(m) vector("list", nruns)), models)
 
-# Extra tracking for omerf, omerf_ri, and omerf_clm
+# Extra tracking for omerf and omerf_clm
 omerf.niter     <- rep(NA_integer_, nruns)
 omerf.time      <- rep(NA_real_,    nruns)   # seconds
-omerf_ri.niter  <- rep(NA_integer_, nruns)
-omerf_ri.time   <- rep(NA_real_,    nruns)   # seconds
 omerf_clm.niter <- rep(NA_integer_, nruns)
 omerf_clm.time  <- rep(NA_real_,    nruns)   # seconds
 
 # Per-run category / group observation counts
 cat_counts_list <- vector("list", nruns)
+
 
 # -------------------------------------------------------
 # Main simulation loop
@@ -119,83 +113,81 @@ cat_counts_list <- vector("list", nruns)
 for (nr in 1:nruns) {
   set.seed(nr)
   cat(sprintf("Run %d / %d\n", nr, nruns))
-  
+
   # ---------- Train set preparation ----------
-  dati <- build.dataset(n, 1, 1, prop)
+  dati <- build.dataset(n, 5, prop)
   y    <- factor(dati$y.train)
   cov  <- dati$cov.train
   gr   <- factor(dati$group.train)
   lev  <- levels(y)
-  
+
   # Dummy-encode group for CLM (group 1 = baseline)
-  cv2 <- do.call(cbind, lapply(1:10, function(lv)
+  cv2 <- do.call(cbind, lapply(1:15, function(lv)
     as.integer(gr == lv)))
-  colnames(cv2) <- paste0('d', 1:10)
+  colnames(cv2) <- paste0('d', 1:15)
   covd <- cbind(cov, cv2)
-  
+
   # ---------- Fit models ----------
-  
-  # CLM
+
+  # CLM (no random effects, dummies for group)
   clm.data <- data.frame(covd, y)
-  clm.mod  <- clm(y ~ x1+x2+x3+x4+x5+x6+x7+d2+d3+d4+d5+d6+d7+d8+d9+d10,
-                  data = clm.data, link = 'logit')
-  
+  clm.mod  <- clm(y ~ x1+x2+x3+x4+x5+x6+x7+
+                    d2+d3+d4+d5+d6+d7+d8+d9+d10+d11+d12+d13+d14+d15,
+                  data = clm.data, link = 'logit')   # d1: baseline group
+
   # Ordinal random forest
   for.data   <- data.frame(cov, y, gr)
   ordfor.mod <- ordfor(depvar = 'y', perffunction = 'probability', for.data)
-  
-  # CLMM (random intercept + random slope on x1)
-  clmm.mod <- clmm(y ~ x1+x2+x3+x4+x5+x6+x7 + (1+x1|gr),
+
+  # CLMM (random intercept only)
+  clmm.mod <- clmm(y ~ x1+x2+x3+x4+x5+x6+x7 + (1|gr),
                    link = 'logit', data = for.data, Hess = TRUE,
                    control = clmm.control(maxLineIter = 500,
                                           maxIter = 1000, grtol = 1e-3))
-  
-  # OMERF — correctly specified with random slope on x1 — tracking
+
+  # OMERF (ordinal forest initialization) — track iterations and wall-clock time
   t0              <- proc.time()["elapsed"]
-  omerf.mod       <- omerf(y = y, cov = cov, group = gr, znam = c('x1'), toll = 0.05)
+  omerf.mod       <- omerf(y, cov, gr, toll = 0.05)
   omerf.time[nr]  <- proc.time()["elapsed"] - t0
   omerf.niter[nr] <- omerf.mod$n.iteration
-  cat(sprintf("  OMERF:     %d iterations, %.1f s\n", omerf.niter[nr], omerf.time[nr]))
-  
-  # OMERF_RI — random intercept only (simplified/misspecified) — tracking
-  t0                 <- proc.time()["elapsed"]
-  omerf_ri.mod       <- omerf(y = y, cov = cov, group = gr, toll = 0.05)
-  omerf_ri.time[nr]  <- proc.time()["elapsed"] - t0
-  omerf_ri.niter[nr] <- omerf_ri.mod$n.iteration
-  cat(sprintf("  OMERF_RI:  %d iterations, %.1f s\n", omerf_ri.niter[nr], omerf_ri.time[nr]))
-  
-  # OMERF_CLM — CLM initialization with random slope on x1 — tracking
+  cat(sprintf("  OMERF:     %d iterations, %.1f s\n",
+              omerf.niter[nr], omerf.time[nr]))
+
+  # OMERF_CLM (CLM initialization) — track iterations and wall-clock time
   t0                  <- proc.time()["elapsed"]
-  omerf_clm.mod       <- omerf_clm(y = y, cov = cov, group = gr, znam = c('x1'), toll = 0.05)
+  omerf_clm.mod       <- omerf_clm(y, cov, gr, toll = 0.05)
   omerf_clm.time[nr]  <- proc.time()["elapsed"] - t0
   omerf_clm.niter[nr] <- omerf_clm.mod$n.iteration
-  cat(sprintf("  OMERF_CLM: %d iterations, %.1f s\n", omerf_clm.niter[nr], omerf_clm.time[nr]))
-  
+  cat(sprintf("  OMERF_CLM: %d iterations, %.1f s\n",
+              omerf_clm.niter[nr], omerf_clm.time[nr]))
+
   # ---------- Test set preparation ----------
-  y.t    <- factor(dati$y.test)
-  cov.t  <- dati$cov.test
-  gr.t   <- factor(dati$group.test)
+  y.t   <- factor(dati$y.test)
+  cov.t <- dati$cov.test
+  gr.t  <- factor(dati$group.test)
   y_test <- as.numeric(y.t)
-  
-  cv2.t <- do.call(cbind, lapply(1:10, function(lv)
+
+  cv2.t <- do.call(cbind, lapply(1:15, function(lv)
     as.integer(gr.t == lv)))
-  colnames(cv2.t) <- paste0('d', 1:10)
+  colnames(cv2.t) <- paste0('d', 1:15)
   cov.td    <- cbind(cov.t, cv2.t)
   test.data <- data.frame(cov.td, gr = gr.t)
-  
+
   # -------------------------------------------------------
   # Helper: compute and store all metrics + CM for one model
   # -------------------------------------------------------
   store_metrics <- function(model_name, y_pred_num, mu_mat) {
     num_classes <- length(lev)
-    
+
+    # Confusion matrix (padded to full C x C)
     cm  <- table(y_test, y_pred_num)
     cm2 <- matrix(0, nrow = num_classes, ncol = num_classes)
     rownames(cm2) <- colnames(cm2) <- lev
     cm2[rownames(cm), colnames(cm)] <- cm[rownames(cm), colnames(cm)]
-    
+
+    # Save confusion matrix for this run
     cms[[model_name]][[nr]] <<- cm2
-    
+
     runs[[model_name]]$acc[nr]       <<- sum(y_test == y_pred_num) / length(y_test)
     runs[[model_name]]$mse[nr]       <<- mean((y_test - y_pred_num)^2)
     runs[[model_name]]$rmse[nr]      <<- sqrt(mean((y_test - y_pred_num)^2))
@@ -208,15 +200,8 @@ for (nr in 1:nruns) {
     runs[[model_name]]$recall[nr]    <<- macro_recall(y_test, y_pred_num, as.numeric(lev))
     runs[[model_name]]$wk[nr]        <<- weighted_kappa_safe(y_test, y_pred_num, as.numeric(lev))
   }
-  
+
   # ---------- CLM predictions ----------
-  # Manual computation mirrors predict_clm_prob(): cumulative logit thresholds
-  # minus the fixed-effect linear predictor, then class probabilities from
-  # cumulative differences, with clip + renormalise for numerical safety.
-  # Alternative (built-in, no clip+renormalise):
-  # mu_clm_t           <- predict(clm.mod, test.data)$fit
-  # colnames(mu_clm_t) <- lev
-  # y_clm_t            <- as.numeric(lev)[apply(mu_clm_t, 1, which.max)]
   beta_clm  <- clm.mod$beta
   X_clm     <- as.matrix(test.data[, names(beta_clm), drop = FALSE])
   eta_clm   <- as.numeric(X_clm %*% beta_clm)
@@ -244,62 +229,42 @@ for (nr in 1:nruns) {
   mu_clm_t <- as.data.frame(prob_clm)
   y_clm_t  <- as.numeric(lev)[apply(prob_clm, 1, which.max)]
   store_metrics('clm', y_clm_t, mu_clm_t)
-  
+
   # ---------- Ordinal forest predictions ----------
   mu_ord_t <- predict(ordfor.mod, newdata = test.data)$classprobs
   y_ord_t  <- as.numeric(predict(ordfor.mod, newdata = test.data)$ypred)
   store_metrics('ordfor', y_ord_t, mu_ord_t)
-  
-  # ---------- OMERF predictions (random intercept + slope on x1) ----------
+
+  # ---------- OMERF predictions ----------
   mu_omerf_t <- predict.omerf(omerf.mod, y, test.data, test.data$gr, type = 'mu')
   y_omerf_t  <- as.numeric(predict.omerf(omerf.mod, y, test.data, test.data$gr, type = 'response'))
   store_metrics('omerf', y_omerf_t, mu_omerf_t)
-  
-  # ---------- OMERF_RI predictions (random intercept only) ----------
-  mu_omerf_ri_t <- predict.omerf(omerf_ri.mod, y, test.data, test.data$gr, type = 'mu')
-  y_omerf_ri_t  <- as.numeric(predict.omerf(omerf_ri.mod, y, test.data, test.data$gr, type = 'response'))
-  store_metrics('omerf_ri', y_omerf_ri_t, mu_omerf_ri_t)
-  
-  # ---------- OMERF_CLM predictions (CLM init, random slope on x1) ----------
+
+  # ---------- OMERF_CLM predictions ----------
   mu_omerf_clm_t <- predict.omerf_clm(omerf_clm.mod, y, test.data, test.data$gr, type = 'mu')
   y_omerf_clm_t  <- as.numeric(predict.omerf_clm(omerf_clm.mod, y, test.data, test.data$gr, type = 'response'))
   store_metrics('omerf_clm', y_omerf_clm_t, mu_omerf_clm_t)
-  
+
   # ---------- CLMM predictions ----------
-  # clmm has no built-in predict() for new groups; compute manually.
-  # Model has random intercept + random slope on x1: b_i = b0_i + b1_i * x1.
-  # Logic mirrors predict_clmm_re(): cumulative logit thresholds minus the
-  # linear predictor (fixed + random), then convert cumulative probabilities
-  # to class probabilities, clip negatives from floating-point arithmetic,
-  # and renormalise rows to sum to 1.
   beta <- clmm.mod$beta
 
-  # Fixed-effect linear predictor: use named column indexing so that the
-  # column order in test.data does not need to match the order of beta.
   X_test    <- as.matrix(test.data[, names(beta), drop = FALSE])
   eta_fixed <- as.numeric(X_test %*% beta)
 
-  # Random effects: intercept (b0) + slope on x1 (b1 * x1).
-  # ranef()$gr is a data.frame with columns "(Intercept)" and "x1".
-  # NA for unseen groups is replaced with 0.
-  re_df  <- ranef(clmm.mod)$gr
-  b0_vec <- setNames(re_df[, "(Intercept)"], rownames(re_df))[as.character(test.data$gr)]
-  b1_vec <- setNames(re_df[, "x1"],          rownames(re_df))[as.character(test.data$gr)]
-  b0_vec[is.na(b0_vec)] <- 0
-  b1_vec[is.na(b1_vec)] <- 0
-  b <- b0_vec + b1_vec * test.data$x1
+  re     <- ranef(clmm.mod)$gr
+  re_vec <- if (is.data.frame(re)) setNames(re[[1]], rownames(re)) else re
+  b      <- unname(re_vec[as.character(test.data$gr)])
+  b[is.na(b)] <- 0
 
   eta   <- eta_fixed + b
   theta <- clmm.mod$Theta
   K     <- length(lev)
 
-  # Cumulative probabilities P(Y <= k) for k = 1 .. K-1
   cumprob <- matrix(NA_real_, nrow = nrow(test.data), ncol = K - 1)
   for (k in seq_len(K - 1)) {
     cumprob[, k] <- plogis(theta[k] - eta)
   }
 
-  # Class probabilities P(Y = k)
   prob      <- matrix(NA_real_, nrow = nrow(test.data), ncol = K)
   prob[, 1] <- cumprob[, 1]
   if (K > 2) {
@@ -309,7 +274,6 @@ for (nr in 1:nruns) {
   }
   prob[, K] <- 1 - cumprob[, K - 1]
 
-  # Clip small negatives from floating-point arithmetic and renormalise
   prob[prob < 0] <- 0
   prob           <- prob / rowSums(prob)
   colnames(prob) <- lev
@@ -319,10 +283,10 @@ for (nr in 1:nruns) {
   store_metrics('clmm', y_clmm_t, mu_clmm_t)
 
   # ---------- Category / group observation counts ----------
-  tbl_train   <- table(cat = y)
-  tbl_test    <- table(cat = y.t)
-  df_catgr_tr <- as.data.frame(table(cat = y,   group = gr))
-  df_catgr_te <- as.data.frame(table(cat = y.t, group = gr.t))
+  tbl_train    <- table(cat = y)
+  tbl_test     <- table(cat = y.t)
+  df_catgr_tr  <- as.data.frame(table(cat = y,   group = gr))
+  df_catgr_te  <- as.data.frame(table(cat = y.t, group = gr.t))
 
   cnt_marg <- rbind(
     data.frame(run = nr, set = "train", group = "all",
@@ -386,7 +350,6 @@ write.table(all_summary,
             sep       = "\t")
 
 # --- File 3: confusion matrix per run (long format) ---
-# Columns: model, run, true_class, pred_class, count
 cm_perrun <- do.call(rbind, lapply(models, function(m) {
   do.call(rbind, lapply(seq_len(nruns), function(nr) {
     mat <- cms[[m]][[nr]]
@@ -407,8 +370,7 @@ write.table(cm_perrun,
             quote     = FALSE,
             sep       = "\t")
 
-# --- File 4: confusion matrix mean and sd (over nruns) per model (long format) ---
-# Columns: model, true_class, pred_class, mean_count, sd_count
+# --- File 4: confusion matrix mean and sd (over nruns) per model ---
 cm_mean <- do.call(rbind, lapply(models, function(m) {
   mean_mat <- Reduce("+", cms[[m]]) / nruns
   ss_mat   <- Reduce("+", lapply(cms[[m]], function(mat) mat^2))
@@ -434,8 +396,6 @@ omerf_tracking <- data.frame(
   run              = seq_len(nruns),
   omerf.niter      = omerf.niter,
   omerf.time.s     = omerf.time,
-  omerf_ri.niter   = omerf_ri.niter,
-  omerf_ri.time.s  = omerf_ri.time,
   omerf_clm.niter  = omerf_clm.niter,
   omerf_clm.time.s = omerf_clm.time
 )
@@ -447,14 +407,10 @@ write.table(omerf_tracking,
 
 # --- File 5b: OMERF tracking summary (mean/sd over nruns) ---
 omerf_tracking_summary <- data.frame(
-  metric = c("omerf.niter", "omerf.time.s",
-             "omerf_ri.niter", "omerf_ri.time.s",
-             "omerf_clm.niter", "omerf_clm.time.s"),
-  mean   = c(mean(omerf.niter),     mean(omerf.time),
-             mean(omerf_ri.niter),  mean(omerf_ri.time),
+  metric = c("omerf.niter", "omerf.time.s", "omerf_clm.niter", "omerf_clm.time.s"),
+  mean   = c(mean(omerf.niter), mean(omerf.time),
              mean(omerf_clm.niter), mean(omerf_clm.time)),
-  sd     = c(sd(omerf.niter),     sd(omerf.time),
-             sd(omerf_ri.niter),  sd(omerf_ri.time),
+  sd     = c(sd(omerf.niter), sd(omerf.time),
              sd(omerf_clm.niter), sd(omerf_clm.time))
 )
 write.table(omerf_tracking_summary,
@@ -472,10 +428,10 @@ write.table(cat_counts_all,
             sep       = "\t")
 
 cat("\nAll results saved.\n")
-cat(sprintf("  results_perrun_%d.txt                         — metrics per run\n", r))
-cat(sprintf("  results_summary_%d.txt                        — mean/sd/max/min per metric\n", r))
-cat(sprintf("  results_cm_perrun_%d.txt                      — confusion matrix per run\n", r))
-cat(sprintf("  results_cm_mean_%d.txt                        — confusion matrix mean+sd over %d runs\n", r, nruns))
-cat(sprintf("  results_omerf_tracking_%d.txt                 — OMERF/OMERF_RI/OMERF_CLM iterations and times per run\n", r))
-cat(sprintf("  results_omerf_tracking_summary_%d.txt         — OMERF/OMERF_RI/OMERF_CLM mean/sd iterations and times\n", r))
-cat(sprintf("  results_cat_counts_%d.txt                     — observation counts per category and group\n", r))
+cat(sprintf("  results_perrun_%d.txt\n", r))
+cat(sprintf("  results_summary_%d.txt\n", r))
+cat(sprintf("  results_cm_perrun_%d.txt\n", r))
+cat(sprintf("  results_cm_mean_%d.txt\n", r))
+cat(sprintf("  results_omerf_tracking_%d.txt\n", r))
+cat(sprintf("  results_omerf_tracking_summary_%d.txt\n", r))
+cat(sprintf("  results_cat_counts_%d.txt\n", r))

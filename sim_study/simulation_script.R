@@ -1,321 +1,459 @@
 library(ordinal)
-library(randomForest)
+library(ranger)
 library(ordinalForest)
 library(pdfCluster)
 library(psych)
 
-# tables with results
-results.acc=matrix(nrow=4, ncol=4, data=rep(0,16))
-results.mse=matrix(nrow=4, ncol=4, data=rep(0,16))
-results.oc=matrix(nrow=4, ncol=4, data=rep(0,16))
-results.ari=matrix(nrow=4, ncol=4, data=rep(0,16))
-results.ck=matrix(nrow=4, ncol=4, data=rep(0,16))
-results.newi=matrix(nrow=4, ncol=4, data=rep(0,16))
-#acc=accuracy, mse=MSE, ari=adjusted rand index, ck=cohen's kappa, oc=cardoso idx, newi=ballante idx
-colnames(results.acc)=c('clm', 'clmm','ordforest', 'omerf')
-colnames(results.mse)=c('clm', 'clmm','ordforest', 'omerf')
-colnames(results.oc)=c('clm', 'clmm','ordforest', 'omerf')
-colnames(results.ari)=c('clm', 'clmm','ordforest', 'omerf')
-colnames(results.ck)=c('clm', 'clmm','ordforest', 'omerf')
-colnames(results.newi)=c('clm', 'clmm','ordforest', 'omerf')
-rownames(results.newi)=c('mean', 'variance', 'max', 'min')
-rownames(results.ck)=c('mean', 'variance', 'max', 'min')
-rownames(results.ari)=c('mean', 'variance', 'max', 'min')
-rownames(results.oc)=c('mean', 'variance', 'max', 'min')
-rownames(results.mse)=c('mean', 'variance', 'max', 'min')
-rownames(results.acc)=c('mean', 'variance', 'max', 'min')
-
-# parameters for the loop
-nruns=100
-n= 1000#number of data to use (test+train)
-prop=0.8 #proportion of data going into the train set
-
-source('OMERF.R')
+source('OMERF_ranger.R')
+source('OMERF_clm_ranger.R')
 source('build_dataset.R')
 source('ord_class_index.R')
 source('index.R')
 
-acc.clm=rep(0,nruns)
-mse.clm=acc.clm
-oc.clm=acc.clm
-ari.clm=acc.clm
-ck.clm=acc.clm
-newi.clm=acc.clm
-acc.clmm=acc.clm
-mse.clmm=acc.clm
-oc.clmm=acc.clm
-ari.clmm=acc.clm
-ck.clmm=acc.clm
-newi.clmm=acc.clm
-acc.ordfor=acc.clm
-mse.ordfor=acc.clm
-oc.ordfor=acc.clm
-ari.ordfor=acc.clm
-ck.ordfor=acc.clm
-newi.ordfor=acc.clm
-acc.omerf=acc.clm
-mse.omerf=acc.clm
-oc.omerf=acc.clm
-ari.omerf=acc.clm
-ck.omerf=acc.clm
-newi.omerf=acc.clm
+# -------------------------------------------------------
+# Helper functions
+# -------------------------------------------------------
 
-for(nr in 1:nruns) {
-  set.seed(nr)
-  print(nr)
-  # train set preparation
-  dati=build.dataset(n,5,prop)
-  y=factor(dati$y.train)
-  cov=dati$cov.train
-  gr=factor(dati$group.train)
-  cv2=NULL
-  for(lv in 1:10) {
-    dummy=NULL
-    for(d in 1:length(gr)) dummy=c(dummy,ifelse(gr[d]==lv,1,0))
-    cv2=cbind(cv2,dummy)
-  }
-  colnames(cv2)=c('d1','d2','d3','d4','d5','d6','d7','d8','d9','d10')
-  covd=cbind(cov,cv2)
-  
-  # build all 4 models
-  clm.data=data.frame(covd,y)
-  clm.mod=clm(y ~ x1+x2+x3+x4+x5+x6+x7+d2+d3+d4+d5+d6+d7+d8+d9+d10 , data=clm.data, link='logit') #d1: base case
-  for.data=data.frame(cov,y,gr)
-  ordfor.mod=ordfor(depvar = 'y', perffunction = 'probability', for.data)
-  clmm.mod=clmm(y ~ x1+x2+x3+x4+x5+x6+x7+(1|gr), link='logit', data=for.data, Hess=TRUE, control=clmm.control(maxLineIter = 500, maxIter=1000, grtol=1e-3))
-  omerf.mod=omerf(y, cov, gr)
-  
-  # test set preparation
-  y.t=factor(dati$y.test)
-  cov.t=dati$cov.test
-  gr.t=factor(dati$group.test)
-  cv2=NULL
-  for(lv in 1:10) {
-    dummy=NULL
-    for(d in 1:length(gr.t)) dummy=c(dummy,ifelse(gr.t[d]==lv,1,0))
-    cv2=cbind(cv2,dummy)
-  }
-  colnames(cv2)=c('d1','d2','d3','d4','d5','d6','d7','d8','d9','d10')
-  cov.td=cbind(cov.t,cv2)
-  test.data=data.frame(cov.td, gr.t)
-  names(test.data)[dim(test.data)[2]]='gr'
-  
-  # calculate performance measures
-  
-  mu_clm_t=predict(clm.mod,test.data)$fit
-  lev=levels(y)
-  names(mu_clm_t) = lev
-  
-  y_clm_t <- as.numeric(names(mu_clm_t)[apply(mu_clm_t, 1, which.max)])
-  y_test=as.numeric(y.t)
-  acc.clm[nr]=sum(y_test==y_clm_t)/length(y_test)
-  mse.clm[nr]=mean((y_test - y_clm_t)^2)
-  cm.clm <- table(y_test, y_clm_t)
-  num_classes_clm <- max(nrow(cm.clm), ncol(cm.clm))
-  cm.clm2 <- matrix(0, nrow = num_classes_clm, ncol = num_classes_clm)
-  rownames(cm.clm2) <- colnames(cm.clm2) <- lev
-  cm.clm2[rownames(cm.clm), colnames(cm.clm)] <- cm.clm[rownames(cm.clm), colnames(cm.clm)]
-  oc.clm[nr]=OrdinalClassificationIndex(cm.clm2, dim(cm.clm2)[1])
-  ari.clm[nr]=adj.rand.index(y_test, as.numeric(y_clm_t))
-  ck.clm[nr]=cohen.kappa(x=cbind(y_test,as.numeric(y_clm_t)))$kappa
-  newi.clm[nr]=newindex(mu_clm_t,y_test,num_classes_clm)$norm.index
-  
-  mu_ord_t <- predict(ordfor.mod, newdata=test.data)$classprobs
-  y_ord_t <- predict(ordfor.mod, newdata=test.data)$ypred
-  acc.ordfor[nr]=sum(y_test==as.numeric(y_ord_t))/length(y_test)
-  mse.ordfor[nr]=mean((y_test - as.numeric(y_ord_t))^2)
-  cm.ordfor <- table(y_test, y_ord_t)
-  num_classes_ordfor <- max(nrow(cm.ordfor), ncol(cm.ordfor))
-  cm.ordfor2 <- matrix(0, nrow = num_classes_ordfor, ncol = num_classes_ordfor)
-  rownames(cm.ordfor2) <- colnames(cm.ordfor2) <- lev
-  cm.ordfor2[rownames(cm.ordfor), colnames(cm.ordfor)] <- cm.ordfor[rownames(cm.ordfor), colnames(cm.ordfor)]
-  oc.ordfor[nr]=OrdinalClassificationIndex(cm.ordfor2, dim(cm.ordfor2)[1])
-  ari.ordfor[nr]=adj.rand.index(y_test, as.numeric(y_ord_t))
-  ck.ordfor[nr]=cohen.kappa(x=cbind(y_test,as.numeric(y_ord_t)))$kappa
-  newi.ordfor[nr]=newindex(mu_ord_t,y_test,num_classes_ordfor)$norm.index
-  
-  mu_omerf_t =  predict.omerf(omerf.mod, y, test.data, test.data$gr, type='mu')
-  y_omerf_t = predict.omerf(omerf.mod, y, test.data, test.data$gr, type='response')
-  acc.omerf[nr]=sum(y_test==as.numeric(y_omerf_t))/length(y_test)
-  mse.omerf[nr]=mean((y_test - as.numeric(y_omerf_t))^2)
-  cm.omerf <- table(y_test, y_omerf_t)
-  num_classes_omerf <- max(nrow(cm.omerf), ncol(cm.omerf))
-  cm.omerf2 <- matrix(0, nrow = num_classes_omerf, ncol = num_classes_omerf)
-  rownames(cm.omerf2) <- colnames(cm.omerf2) <- lev
-  cm.omerf2[rownames(cm.omerf), colnames(cm.omerf)] <- cm.omerf[rownames(cm.omerf), colnames(cm.omerf)]
-  oc.omerf[nr]=OrdinalClassificationIndex(cm.omerf2, dim(cm.omerf2)[1])
-  ari.omerf[nr]=adj.rand.index(y_test, as.numeric(y_omerf_t))
-  ck.omerf[nr]=cohen.kappa(x=cbind(y_test,as.numeric(y_omerf_t)))$kappa
-  newi.omerf[nr]=newindex(mu_omerf_t,y_test,num_classes_omerf)$norm.index
-  
-  mu_clmm_t=as.data.frame(matrix(0, dim(test.data)[1], length(lev)))
-  eta_clmm_t=as.data.frame(matrix(0, dim(test.data)[1], length(lev)))
-  names(mu_clmm_t) = lev
-  names(eta_clmm_t) = lev
-  for (c in lev) {
-    for (j in 1:dim(test.data)[1]) {
-      if (c==lev[1]) {
-        eta_clmm_t[j,c]=as.numeric(clmm.mod$Theta[which(lev==c)]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - test.data$x4[j] * clmm.mod$beta[4] - test.data$x5[j] * clmm.mod$beta[5] - test.data$x6[j] * clmm.mod$beta[6] - test.data$x7[j] * clmm.mod$beta[7] - clmm.mod$ranef[test.data$gr[j]]
-        mu_clmm_t[j,c]=plogis(eta_clmm_t[j,c])
-      } else if(c==lev[length(lev)]) {
-        eta_clmm_t[j,c]=qlogis(0.999999)
-        mu_clmm_t[j,c]=1 - plogis(as.numeric(clmm.mod$Theta[which(lev==c)-1]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - test.data$x4[j] * clmm.mod$beta[4] - test.data$x5[j] * clmm.mod$beta[5] - test.data$x6[j] * clmm.mod$beta[6]- test.data$x7[j] * clmm.mod$beta[7] - clmm.mod$ranef[test.data$gr[j]])
-      } else {
-        eta_clmm_t[j,c]=as.numeric(clmm.mod$Theta[which(lev==c)]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - test.data$x4[j] * clmm.mod$beta[4] - test.data$x5[j] * clmm.mod$beta[5] - test.data$x6[j] * clmm.mod$beta[6]- test.data$x7[j] * clmm.mod$beta[7] - clmm.mod$ranef[test.data$gr[j]]
-        mu_clmm_t[j,c]=plogis(eta_clmm_t[j,c]) -
-          plogis(as.numeric(clmm.mod$Theta[which(lev==c)-1]) - test.data$x1[j] * clmm.mod$beta[1] - test.data$x2[j] * clmm.mod$beta[2] - test.data$x3[j] * clmm.mod$beta[3] - test.data$x4[j] * clmm.mod$beta[4] - test.data$x5[j] * clmm.mod$beta[5] - test.data$x6[j] * clmm.mod$beta[6]- test.data$x7[j] * clmm.mod$beta[7] - clmm.mod$ranef[test.data$gr[j]])
-      }
-    }
-    
-  }
-  
-  y_clmm_t <- as.numeric(names(mu_clmm_t)[apply(mu_clmm_t, 1, which.max)])
-  acc.clmm[nr]=sum(y_test==y_clmm_t)/length(y_test)
-  mse.clmm[nr]=mean((y_test - y_clmm_t)^2)
-  cm.clmm <- table(y_test, y_clmm_t)
-  num_classes_clmm <- max(nrow(cm.clmm), ncol(cm.clmm))
-  cm.clmm2 <- matrix(0, nrow = num_classes_clmm, ncol = num_classes_clmm)
-  rownames(cm.clmm2) <- colnames(cm.clmm2) <- lev
-  cm.clmm2[rownames(cm.clmm), colnames(cm.clmm)] <- cm.clmm[rownames(cm.clmm), colnames(cm.clmm)]
-  oc.clmm[nr]=OrdinalClassificationIndex(cm.clmm2, dim(cm.clmm2)[1])
-  ari.clmm[nr]=adj.rand.index(y_test, as.numeric(y_clmm_t))
-  ck.clmm[nr]=cohen.kappa(x=cbind(y_test,as.numeric(y_clmm_t)))$kappa
-  newi.clmm[nr]=newindex(mu_clmm_t,y_test,num_classes_clmm)$norm.index
-  
+# Macro-averaged precision (one-vs-rest per class, then averaged)
+macro_precision <- function(y_true, y_pred, lev) {
+  prec <- sapply(lev, function(c) {
+    tp <- sum(y_true == c & y_pred == c)
+    fp <- sum(y_true != c & y_pred == c)
+    if ((tp + fp) == 0) return(NA) else return(tp / (tp + fp))
+  })
+  mean(prec, na.rm = TRUE)
 }
 
-# calculate the actual results 
-results.acc[1,1]=mean(acc.clm)
-results.acc[2,1]=var(acc.clm)*(nruns-1)/nruns
-results.acc[3,1]=max(acc.clm)
-results.acc[4,1]=min(acc.clm)
+# Macro-averaged recall (one-vs-rest per class, then averaged)
+macro_recall <- function(y_true, y_pred, lev) {
+  rec <- sapply(lev, function(c) {
+    tp <- sum(y_true == c & y_pred == c)
+    fn <- sum(y_true == c & y_pred != c)
+    if ((tp + fn) == 0) return(NA) else return(tp / (tp + fn))
+  })
+  mean(rec, na.rm = TRUE)
+}
 
-results.acc[1,2]=mean(acc.clmm)
-results.acc[2,2]=var(acc.clmm)*(nruns-1)/nruns
-results.acc[3,2]=max(acc.clmm)
-results.acc[4,2]=min(acc.clmm)
+# Mean Absolute Error for ordinal predictions
+mae_ord <- function(y_true, y_pred) mean(abs(y_true - y_pred))
 
-results.acc[1,3]=mean(acc.ordfor)
-results.acc[2,3]=var(acc.ordfor)*(nruns-1)/nruns
-results.acc[3,3]=max(acc.ordfor)
-results.acc[4,3]=min(acc.ordfor)
+# Summarise a numeric vector: mean, sd, max, min
+summarise_metric <- function(x) {
+  c(mean = mean(x),
+    sd   = sd(x),
+    max  = max(x),
+    min  = min(x))
+}
 
-results.acc[1,4]=mean(acc.omerf)
-results.acc[2,4]=var(acc.omerf)*(nruns-1)/nruns
-results.acc[3,4]=max(acc.omerf)
-results.acc[4,4]=min(acc.omerf)
+# Cohen's Weighted Kappa for ordinal response
+# weights = "quadratic" penalises distant errors more;
+# use weights = "linear" for linear penalisation.
+weighted_kappa_safe <- function(y_true, y_pred, lev, weights = "quadratic") {
+  y_true <- factor(y_true, levels = lev, ordered = TRUE)
+  y_pred <- factor(y_pred, levels = lev, ordered = TRUE)
 
-results.mse[1,1]=mean(mse.clm)
-results.mse[2,1]=var(mse.clm)*(nruns-1)/nruns
-results.mse[3,1]=max(mse.clm)
-results.mse[4,1]=min(mse.clm)
+  tab <- table(y_true, y_pred)
+  n   <- sum(tab)
+  K   <- length(lev)
 
-results.mse[1,2]=mean(mse.clmm)
-results.mse[2,2]=var(mse.clmm)*(nruns-1)/nruns
-results.mse[3,2]=max(mse.clmm)
-results.mse[4,2]=min(mse.clmm)
+  if (n == 0 || K < 2) return(NA_real_)
 
-results.mse[1,3]=mean(mse.ordfor)
-results.mse[2,3]=var(mse.ordfor)*(nruns-1)/nruns
-results.mse[3,3]=max(mse.ordfor)
-results.mse[4,3]=min(mse.ordfor)
+  d <- abs(row(tab) - col(tab))
+  if (weights == "linear") {
+    W <- d / (K - 1)
+  } else if (weights == "quadratic") {
+    W <- (d / (K - 1))^2
+  } else {
+    stop("weights must be 'linear' or 'quadratic'")
+  }
 
-results.mse[1,4]=mean(mse.omerf)
-results.mse[2,4]=var(mse.omerf)*(nruns-1)/nruns
-results.mse[3,4]=max(mse.omerf)
-results.mse[4,4]=min(mse.omerf)
+  O   <- tab / n
+  E   <- outer(rowSums(tab), colSums(tab)) / n^2
+  den <- sum(W * E)
+  if (den == 0) return(NA_real_)
+  1 - sum(W * O) / den
+}
 
-results.oc[1,1]=mean(oc.clm)
-results.oc[2,1]=var(oc.clm)*(nruns-1)/nruns
-results.oc[3,1]=max(oc.clm)
-results.oc[4,1]=min(oc.clm)
+# -------------------------------------------------------
+# Simulation parameters
+# -------------------------------------------------------
+nruns <- 100
+n     <- 1000
+prop  <- 0.8    # proportion of data going into the train set
+r     <- 4      # run index used in output file names
 
-results.oc[1,2]=mean(oc.clmm)
-results.oc[2,2]=var(oc.clmm)*(nruns-1)/nruns
-results.oc[3,2]=max(oc.clmm)
-results.oc[4,2]=min(oc.clmm)
+# -------------------------------------------------------
+# Pre-allocate per-run result vectors for all 5 models
+# Metrics: acc, mse, rmse, mae, oc, ari, ck, wk, newi, precision, recall
+# Extra for omerf and omerf_clm: n.iter, fit.time
+# -------------------------------------------------------
+models  <- c('clm', 'clmm', 'ordfor', 'omerf', 'omerf_clm')
+metrics <- c('acc', 'mse', 'rmse', 'mae', 'oc', 'ari', 'ck', 'wk', 'newi', 'precision', 'recall')
 
-results.oc[1,3]=mean(oc.ordfor)
-results.oc[2,3]=var(oc.ordfor)*(nruns-1)/nruns
-results.oc[3,3]=max(oc.ordfor)
-results.oc[4,3]=min(oc.ordfor)
+# Named list of per-run vectors, one element per model x metric combination
+runs <- setNames(
+  lapply(seq_along(models), function(m)
+    setNames(lapply(metrics, function(mt) rep(NA_real_, nruns)), metrics)),
+  models)
 
-results.oc[1,4]=mean(oc.omerf)
-results.oc[2,4]=var(oc.omerf)*(nruns-1)/nruns
-results.oc[3,4]=max(oc.omerf)
-results.oc[4,4]=min(oc.omerf)
+# Confusion matrices: list[model][run] -> C x C matrix
+cms <- setNames(lapply(models, function(m) vector("list", nruns)), models)
 
-results.ari[1,1]=mean(ari.clm)
-results.ari[2,1]=var(ari.clm)*(nruns-1)/nruns
-results.ari[3,1]=max(ari.clm)
-results.ari[4,1]=min(ari.clm)
+# Extra tracking for omerf and omerf_clm
+omerf.niter     <- rep(NA_integer_, nruns)
+omerf.time      <- rep(NA_real_,    nruns)   # seconds
+omerf_clm.niter <- rep(NA_integer_, nruns)
+omerf_clm.time  <- rep(NA_real_,    nruns)   # seconds
 
-results.ari[1,2]=mean(ari.clmm)
-results.ari[2,2]=var(ari.clmm)*(nruns-1)/nruns
-results.ari[3,2]=max(ari.clmm)
-results.ari[4,2]=min(ari.clmm)
+# Per-run category / group observation counts
+cat_counts_list <- vector("list", nruns)
 
-results.ari[1,3]=mean(ari.ordfor)
-results.ari[2,3]=var(ari.ordfor)*(nruns-1)/nruns
-results.ari[3,3]=max(ari.ordfor)
-results.ari[4,3]=min(ari.ordfor)
+# -------------------------------------------------------
+# Main simulation loop
+# -------------------------------------------------------
+for (nr in 1:nruns) {
+  set.seed(nr)
+  cat(sprintf("Run %d / %d\n", nr, nruns))
+  
+  # ---------- Train set preparation ----------
+  dati <- build.dataset(n, 5, prop)
+  y    <- factor(dati$y.train)
+  cov  <- dati$cov.train
+  gr   <- factor(dati$group.train)
+  lev  <- levels(y)
+  
+  # Dummy-encode group for CLM (group 1 = baseline)
+  cv2 <- do.call(cbind, lapply(1:10, function(lv)
+    as.integer(gr == lv)))
+  colnames(cv2) <- paste0('d', 1:10)
+  covd <- cbind(cov, cv2)
+  
+  # ---------- Fit models ----------
+  
+  # CLM (no random effects, dummies for group)
+  clm.data <- data.frame(covd, y)
+  clm.mod  <- clm(y ~ x1+x2+x3+x4+x5+x6+x7+
+                    d2+d3+d4+d5+d6+d7+d8+d9+d10,
+                  data = clm.data, link = 'logit')   # d1: baseline group
+  
+  # Ordinal random forest
+  for.data   <- data.frame(cov, y, gr)
+  ordfor.mod <- ordfor(depvar = 'y', perffunction = 'probability', for.data)
+  
+  # CLMM (random intercept only)
+  clmm.mod <- clmm(y ~ x1+x2+x3+x4+x5+x6+x7 + (1|gr),
+                   link = 'logit', data = for.data, Hess = TRUE,
+                   control = clmm.control(maxLineIter = 500,
+                                          maxIter = 1000, grtol = 1e-3))
+  
+  # OMERF (ordinal forest initialization) — track iterations and wall-clock time
+  t0              <- proc.time()["elapsed"]
+  omerf.mod       <- omerf(y, cov, gr, toll = 0.05)
+  omerf.time[nr]  <- proc.time()["elapsed"] - t0
+  omerf.niter[nr] <- omerf.mod$n.iteration
+  cat(sprintf("  OMERF:     %d iterations, %.1f s\n",
+              omerf.niter[nr], omerf.time[nr]))
+  
+  # OMERF_CLM (CLM initialization) — track iterations and wall-clock time
+  t0                  <- proc.time()["elapsed"]
+  omerf_clm.mod       <- omerf_clm(y, cov, gr, toll = 0.05)
+  omerf_clm.time[nr]  <- proc.time()["elapsed"] - t0
+  omerf_clm.niter[nr] <- omerf_clm.mod$n.iteration
+  cat(sprintf("  OMERF_CLM: %d iterations, %.1f s\n",
+              omerf_clm.niter[nr], omerf_clm.time[nr]))
+  
+  # ---------- Test set preparation ----------
+  y.t   <- factor(dati$y.test)
+  cov.t <- dati$cov.test
+  gr.t  <- factor(dati$group.test)
+  y_test <- as.numeric(y.t)
+  
+  cv2.t <- do.call(cbind, lapply(1:10, function(lv)
+    as.integer(gr.t == lv)))
+  colnames(cv2.t) <- paste0('d', 1:10)
+  cov.td    <- cbind(cov.t, cv2.t)
+  test.data <- data.frame(cov.td, gr = gr.t)
+  
+  # -------------------------------------------------------
+  # Helper: compute and store all metrics + CM for one model
+  # -------------------------------------------------------
+  store_metrics <- function(model_name, y_pred_num, mu_mat) {
+    num_classes <- length(lev)
+    
+    # Confusion matrix (padded to full C x C)
+    cm  <- table(y_test, y_pred_num)
+    cm2 <- matrix(0, nrow = num_classes, ncol = num_classes)
+    rownames(cm2) <- colnames(cm2) <- lev
+    cm2[rownames(cm), colnames(cm)] <- cm[rownames(cm), colnames(cm)]
+    
+    # Save confusion matrix for this run
+    cms[[model_name]][[nr]] <<- cm2
+    
+    runs[[model_name]]$acc[nr]       <<- sum(y_test == y_pred_num) / length(y_test)
+    runs[[model_name]]$mse[nr]       <<- mean((y_test - y_pred_num)^2)
+    runs[[model_name]]$rmse[nr]      <<- sqrt(mean((y_test - y_pred_num)^2))
+    runs[[model_name]]$mae[nr]       <<- mae_ord(y_test, y_pred_num)
+    runs[[model_name]]$oc[nr]        <<- OrdinalClassificationIndex(cm2, num_classes)
+    runs[[model_name]]$ari[nr]       <<- adj.rand.index(y_test, y_pred_num)
+    runs[[model_name]]$ck[nr]        <<- cohen.kappa(cbind(y_test, y_pred_num))$kappa
+    runs[[model_name]]$newi[nr]      <<- newindex(mu_mat, y_test, num_classes)$norm.index
+    runs[[model_name]]$precision[nr] <<- macro_precision(y_test, y_pred_num, as.numeric(lev))
+    runs[[model_name]]$recall[nr]    <<- macro_recall(y_test, y_pred_num, as.numeric(lev))
+    runs[[model_name]]$wk[nr]        <<- weighted_kappa_safe(y_test, y_pred_num, as.numeric(lev))
+  }
+  
+  # ---------- CLM predictions ----------
+  # Manual computation mirrors predict_clm_prob(): cumulative logit thresholds
+  # minus the fixed-effect linear predictor, then class probabilities from
+  # cumulative differences, with clip + renormalise for numerical safety.
+  # mu_clm_t           <- predict(clm.mod, test.data)$fit
+  # colnames(mu_clm_t) <- lev
+  # y_clm_t            <- as.numeric(lev)[apply(mu_clm_t, 1, which.max)]
+  beta_clm  <- clm.mod$beta
+  X_clm     <- as.matrix(test.data[, names(beta_clm), drop = FALSE])
+  eta_clm   <- as.numeric(X_clm %*% beta_clm)
+  theta_clm <- clm.mod$Theta
+  K_clm     <- length(lev)
 
-results.ari[1,4]=mean(ari.omerf)
-results.ari[2,4]=var(ari.omerf)*(nruns-1)/nruns
-results.ari[3,4]=max(ari.omerf)
-results.ari[4,4]=min(ari.omerf)
+  cumprob_clm <- matrix(NA_real_, nrow = nrow(test.data), ncol = K_clm - 1)
+  for (k in seq_len(K_clm - 1)) {
+    cumprob_clm[, k] <- plogis(theta_clm[k] - eta_clm)
+  }
 
-results.ck[1,1]=mean(ck.clm)
-results.ck[2,1]=var(ck.clm)*(nruns-1)/nruns
-results.ck[3,1]=max(ck.clm)
-results.ck[4,1]=min(ck.clm)
+  prob_clm      <- matrix(NA_real_, nrow = nrow(test.data), ncol = K_clm)
+  prob_clm[, 1] <- cumprob_clm[, 1]
+  if (K_clm > 2) {
+    for (k in 2:(K_clm - 1)) {
+      prob_clm[, k] <- cumprob_clm[, k] - cumprob_clm[, k - 1]
+    }
+  }
+  prob_clm[, K_clm] <- 1 - cumprob_clm[, K_clm - 1]
 
-results.ck[1,2]=mean(ck.clmm)
-results.ck[2,2]=var(ck.clmm)*(nruns-1)/nruns
-results.ck[3,2]=max(ck.clmm)
-results.ck[4,2]=min(ck.clmm)
+  prob_clm[prob_clm < 0] <- 0
+  prob_clm               <- prob_clm / rowSums(prob_clm)
+  colnames(prob_clm)     <- lev
 
-results.ck[1,3]=mean(ck.ordfor)
-results.ck[2,3]=var(ck.ordfor)*(nruns-1)/nruns
-results.ck[3,3]=max(ck.ordfor)
-results.ck[4,3]=min(ck.ordfor)
+  mu_clm_t <- as.data.frame(prob_clm)
+  y_clm_t  <- as.numeric(lev)[apply(prob_clm, 1, which.max)]
+  store_metrics('clm', y_clm_t, mu_clm_t)
+  
+  # ---------- Ordinal forest predictions ----------
+  mu_ord_t <- predict(ordfor.mod, newdata = test.data)$classprobs
+  y_ord_t  <- as.numeric(predict(ordfor.mod, newdata = test.data)$ypred)
+  store_metrics('ordfor', y_ord_t, mu_ord_t)
+  
+  # ---------- OMERF predictions ----------
+  mu_omerf_t <- predict.omerf(omerf.mod, y, test.data, test.data$gr, type = 'mu')
+  y_omerf_t  <- as.numeric(predict.omerf(omerf.mod, y, test.data, test.data$gr, type = 'response'))
+  store_metrics('omerf', y_omerf_t, mu_omerf_t)
+  
+  # ---------- OMERF_CLM predictions ----------
+  mu_omerf_clm_t <- predict.omerf_clm(omerf_clm.mod, y, test.data, test.data$gr, type = 'mu')
+  y_omerf_clm_t  <- as.numeric(predict.omerf_clm(omerf_clm.mod, y, test.data, test.data$gr, type = 'response'))
+  store_metrics('omerf_clm', y_omerf_clm_t, mu_omerf_clm_t)
+  
+  # ---------- CLMM predictions ----------
+  # clmm has no built-in predict() for new groups; compute manually.
+  # Logic mirrors predict_clmm_re(): cumulative logit thresholds minus the
+  # linear predictor (fixed + random), then convert cumulative probabilities
+  # to class probabilities, clip negatives from floating-point arithmetic,
+  # and renormalise rows to sum to 1.
+  beta <- clmm.mod$beta
 
-results.ck[1,4]=mean(ck.omerf)
-results.ck[2,4]=var(ck.omerf)*(nruns-1)/nruns
-results.ck[3,4]=max(ck.omerf)
-results.ck[4,4]=min(ck.omerf)
+  # Fixed-effect linear predictor: use named column indexing so that the
+  # column order in test.data does not need to match the order of beta.
+  X_test    <- as.matrix(test.data[, names(beta), drop = FALSE])
+  eta_fixed <- as.numeric(X_test %*% beta)
 
-results.newi[1,1]=mean(newi.clm)
-results.newi[2,1]=var(newi.clm)*(nruns-1)/nruns
-results.newi[3,1]=max(newi.clm)
-results.newi[4,1]=min(newi.clm)
+  # Random effects for each test row (NA for unseen groups -> 0).
+  # ranef()$gr can return either a named numeric vector or a single-column
+  # data.frame depending on the R / ordinal package version; handle both.
+  re     <- ranef(clmm.mod)$gr
+  re_vec <- if (is.data.frame(re)) setNames(re[[1]], rownames(re)) else re
+  b      <- unname(re_vec[as.character(test.data$gr)])
+  b[is.na(b)] <- 0
 
-results.newi[1,2]=mean(newi.clmm)
-results.newi[2,2]=var(newi.clmm)*(nruns-1)/nruns
-results.newi[3,2]=max(newi.clmm)
-results.newi[4,2]=min(newi.clmm)
+  eta   <- eta_fixed + b
+  theta <- clmm.mod$Theta
+  K     <- length(lev)
 
-results.newi[1,3]=mean(newi.ordfor)
-results.newi[2,3]=var(newi.ordfor)*(nruns-1)/nruns
-results.newi[3,3]=max(newi.ordfor)
-results.newi[4,3]=min(newi.ordfor)
+  # Cumulative probabilities P(Y <= k) for k = 1 .. K-1
+  cumprob <- matrix(NA_real_, nrow = nrow(test.data), ncol = K - 1)
+  for (k in seq_len(K - 1)) {
+    cumprob[, k] <- plogis(theta[k] - eta)
+  }
 
-results.newi[1,4]=mean(newi.omerf)
-results.newi[2,4]=var(newi.omerf)*(nruns-1)/nruns
-results.newi[3,4]=max(newi.omerf)
-results.newi[4,4]=min(newi.omerf)
+  # Class probabilities P(Y = k)
+  prob      <- matrix(NA_real_, nrow = nrow(test.data), ncol = K)
+  prob[, 1] <- cumprob[, 1]
+  if (K > 2) {
+    for (k in 2:(K - 1)) {
+      prob[, k] <- cumprob[, k] - cumprob[, k - 1]
+    }
+  }
+  prob[, K] <- 1 - cumprob[, K - 1]
 
-# save the results
-r=1
-name.acc=paste('results_acc_',r,'.txt', sep='')
-name.mse=paste('results_mse_',r,'.txt', sep='')
-name.oc=paste('results_oc_',r,'.txt', sep='')
-name.ari=paste('results_ari_',r,'.txt', sep='')
-name.ck=paste('results_ck_',r,'.txt', sep='')
-name.newi=paste('results_newi_',r,'.txt', sep='')
-write.table(results.acc, file=name.acc)
-write.table(results.mse, file=name.mse)
-write.table(results.oc, file=name.oc)
-write.table(results.ari, file=name.ari)
-write.table(results.ck, file=name.ck)
-write.table(results.newi, file=name.newi)
+  # Clip small negatives from floating-point arithmetic and renormalise
+  prob[prob < 0] <- 0
+  prob           <- prob / rowSums(prob)
+  colnames(prob) <- lev
+
+  mu_clmm_t <- as.data.frame(prob)
+  y_clmm_t  <- as.numeric(lev)[apply(prob, 1, which.max)]
+  store_metrics('clmm', y_clmm_t, mu_clmm_t)
+
+  # ---------- Category / group observation counts ----------
+  tbl_train    <- table(cat = y)
+  tbl_test     <- table(cat = y.t)
+  df_catgr_tr  <- as.data.frame(table(cat = y,   group = gr))
+  df_catgr_te  <- as.data.frame(table(cat = y.t, group = gr.t))
+
+  cnt_marg <- rbind(
+    data.frame(run = nr, set = "train", group = "all",
+               cat = names(tbl_train), count = as.integer(tbl_train)),
+    data.frame(run = nr, set = "test",  group = "all",
+               cat = names(tbl_test),  count = as.integer(tbl_test))
+  )
+  cnt_bygrp <- rbind(
+    data.frame(run = nr, set = "train",
+               group = as.character(df_catgr_tr$group),
+               cat   = as.character(df_catgr_tr$cat),
+               count = as.integer(df_catgr_tr$Freq)),
+    data.frame(run = nr, set = "test",
+               group = as.character(df_catgr_te$group),
+               cat   = as.character(df_catgr_te$cat),
+               count = as.integer(df_catgr_te$Freq))
+  )
+  cat_counts_list[[nr]] <- rbind(cnt_marg, cnt_bygrp)
+
+}  # end main loop
+
+# -------------------------------------------------------
+# Aggregate results
+# -------------------------------------------------------
+
+# --- File 1: all metrics, all models, per run (long format) ---
+all_perrun <- do.call(rbind, lapply(metrics, function(mt) {
+  do.call(rbind, lapply(models, function(m) {
+    data.frame(
+      metric = mt,
+      model  = m,
+      run    = seq_len(nruns),
+      value  = runs[[m]][[mt]]
+    )
+  }))
+}))
+write.table(all_perrun,
+            file      = sprintf("results_perrun_%d.txt", r),
+            row.names = FALSE,
+            quote     = FALSE,
+            sep       = "\t")
+
+# --- File 2: summary (mean/sd/max/min) per metric and model ---
+all_summary <- do.call(rbind, lapply(metrics, function(mt) {
+  do.call(rbind, lapply(models, function(m) {
+    s <- summarise_metric(runs[[m]][[mt]])
+    data.frame(
+      metric = mt,
+      model  = m,
+      mean   = s["mean"],
+      sd     = s["sd"],
+      max    = s["max"],
+      min    = s["min"]
+    )
+  }))
+}))
+write.table(all_summary,
+            file      = sprintf("results_summary_%d.txt", r),
+            row.names = FALSE,
+            quote     = FALSE,
+            sep       = "\t")
+
+# --- File 3: confusion matrix per run (long format) ---
+# Columns: model, run, true_class, pred_class, count
+cm_perrun <- do.call(rbind, lapply(models, function(m) {
+  do.call(rbind, lapply(seq_len(nruns), function(nr) {
+    mat <- cms[[m]][[nr]]
+    do.call(rbind, lapply(rownames(mat), function(tr) {
+      data.frame(
+        model      = m,
+        run        = nr,
+        true_class = tr,
+        pred_class = colnames(mat),
+        count      = as.numeric(mat[tr, ])
+      )
+    }))
+  }))
+}))
+write.table(cm_perrun,
+            file      = sprintf("results_cm_perrun_%d.txt", r),
+            row.names = FALSE,
+            quote     = FALSE,
+            sep       = "\t")
+
+# --- File 4: confusion matrix mean and sd (over nruns) per model (long format) ---
+# Columns: model, true_class, pred_class, mean_count, sd_count
+cm_mean <- do.call(rbind, lapply(models, function(m) {
+  mean_mat <- Reduce("+", cms[[m]]) / nruns
+  ss_mat   <- Reduce("+", lapply(cms[[m]], function(mat) mat^2))
+  sd_mat   <- sqrt((ss_mat - nruns * mean_mat^2) / (nruns - 1))
+  do.call(rbind, lapply(rownames(mean_mat), function(tr) {
+    data.frame(
+      model      = m,
+      true_class = tr,
+      pred_class = colnames(mean_mat),
+      mean_count = as.numeric(mean_mat[tr, ]),
+      sd_count   = as.numeric(sd_mat[tr, ])
+    )
+  }))
+}))
+write.table(cm_mean,
+            file      = sprintf("results_cm_mean_%d.txt", r),
+            row.names = FALSE,
+            quote     = FALSE,
+            sep       = "\t")
+
+# --- File 5: OMERF tracking per run (iterations + elapsed time) ---
+omerf_tracking <- data.frame(
+  run              = seq_len(nruns),
+  omerf.niter      = omerf.niter,
+  omerf.time.s     = omerf.time,
+  omerf_clm.niter  = omerf_clm.niter,
+  omerf_clm.time.s = omerf_clm.time
+)
+write.table(omerf_tracking,
+            file      = sprintf("results_omerf_tracking_%d.txt", r),
+            row.names = FALSE,
+            quote     = FALSE,
+            sep       = "\t")
+
+# --- File 5b: OMERF tracking summary (mean/sd over nruns) ---
+omerf_tracking_summary <- data.frame(
+  metric = c("omerf.niter", "omerf.time.s", "omerf_clm.niter", "omerf_clm.time.s"),
+  mean   = c(mean(omerf.niter), mean(omerf.time),
+             mean(omerf_clm.niter), mean(omerf_clm.time)),
+  sd     = c(sd(omerf.niter), sd(omerf.time),
+             sd(omerf_clm.niter), sd(omerf_clm.time))
+)
+write.table(omerf_tracking_summary,
+            file      = sprintf("results_omerf_tracking_summary_%d.txt", r),
+            row.names = FALSE,
+            quote     = FALSE,
+            sep       = "\t")
+
+# --- File 6: observation counts per category and per category x group ---
+cat_counts_all <- do.call(rbind, cat_counts_list)
+write.table(cat_counts_all,
+            file      = sprintf("results_cat_counts_%d.txt", r),
+            row.names = FALSE,
+            quote     = FALSE,
+            sep       = "\t")
+
+cat("\nAll results saved.\n")
+cat(sprintf("  results_perrun_%d.txt                         — metrics per run\n", r))
+cat(sprintf("  results_summary_%d.txt                        — mean/sd/max/min per metric\n", r))
+cat(sprintf("  results_cm_perrun_%d.txt                      — confusion matrix per run\n", r))
+cat(sprintf("  results_cm_mean_%d.txt                        — confusion matrix mean+sd over %d runs\n", r, nruns))
+cat(sprintf("  results_omerf_tracking_%d.txt                 — OMERF/OMERF_CLM iterations and times per run\n", r))
+cat(sprintf("  results_omerf_tracking_summary_%d.txt         — OMERF/OMERF_CLM mean/sd iterations and times\n", r))
+cat(sprintf("  results_cat_counts_%d.txt                     — observation counts per category and group\n", r))

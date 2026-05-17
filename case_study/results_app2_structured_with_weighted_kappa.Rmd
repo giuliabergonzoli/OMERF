@@ -1,0 +1,509 @@
+---
+title: "results_app2"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+#setwd("~/Library/CloudStorage/OneDrive-UniversitàdegliStudidiMilano/OneDrive/TESI STUDENTI/TESI SEGUITE polimi/TESI BERGONZOLI 2023/J Clas/Applicazione OMERF education/ESS11MD_e01_2")
+
+#knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = TRUE)
+# If desired, set the working directory here:
+# knitr::opts_knit$set(root.dir = "...")
+```
+
+# Data loading and functions
+
+```{r}
+setwd("~/Library/CloudStorage/OneDrive-UniversitàdegliStudidiMilano/OneDrive/TESI STUDENTI/TESI SEGUITE polimi/TESI BERGONZOLI 2023/J Clas/Applicazione OMERF education/ESS11MD_e01_2")
+source("OMERF_ranger.R")
+
+# If these files are in the working directory, they are loaded.
+# If they are not present, the file uses fallback functions defined below.
+source("ord_class_index.R")
+source("index.R")
+
+library(caret)
+library(ordinal)
+library(ordinalForest)
+library(pdfCluster)
+library(psych)
+library(ranger)
+
+set.seed(1999)
+
+dati <- readRDS("clean_data")
+
+# Factors
+factor_vars <- c("uempla", "mainact", "gndr", "cntry")
+factor_vars <- intersect(factor_vars, names(dati))
+dati[factor_vars] <- lapply(dati[factor_vars], as.factor)
+
+# Ordered response and group
+# Note: the original variable in the dataset is stflife or happy.
+dati$y <- factor(dati$stflife, ordered = TRUE)
+dati$group <- factor(dati$cntry)
+
+# better to use these as numeric from a performance standpoint
+#dati$health <- factor(dati$health, ordered=T)
+#dati$ppltrst <- factor(dati$ppltrst, ordered=T)
+#dati$trstplt <- factor(dati$trstplt, ordered=T)
+#dati$rlgdgr <- factor(dati$rlgdgr, ordered=T)
+
+# Covariates used in all models
+xnam <- c( "agea", "health","netustm","hinctnta", "eisced", "uempla", "mainact", "gndr", "ppltrst", "pplfair","pplhlp","trstplt","trstlgl", "rlgdgr") #,
+
+# Keep only the necessary columns and remove missing values
+vars_keep <- c("y", "group", xnam)
+dati_model <- na.omit(dati[, vars_keep])
+
+str(dati_model)
+summary(dati_model)
+table(dati_model$y)
+table(dati_model$group)
+length(levels(dati_model$group))
+```
+
+# Train/test split
+
+```{r}
+set.seed(1999)
+split_indices <- createDataPartition(dati_model$y, p = 0.80, list = FALSE)
+
+data_train <- dati_model[split_indices, ]
+data_test  <- dati_model[-split_indices, ]
+
+# Align levels between train and test
+for (v in names(data_train)) {
+  if (is.factor(data_train[[v]])) {
+    data_test[[v]] <- factor(data_test[[v]], levels = levels(data_train[[v]]),
+                             ordered = is.ordered(data_train[[v]]))
+  }
+}
+
+y <- data_train$y
+group <- data_train$group
+cov <- data_train[, xnam]
+
+y_test_orig <- data_test$y
+y_test <- as.numeric(y_test_orig)
+lev <- levels(y)
+K <- length(lev)
+
+# Check: response with 1 ordered levels and 28 groups, as expected.
+K
+length(levels(group))
+```
+
+# Helper functions for prediction and metrics
+
+```{r}
+# Converts a probability matrix into the predicted class.
+prob_to_class <- function(prob, lev) {
+  prob <- as.data.frame(prob)
+  names(prob) <- lev
+  factor(lev[apply(prob, 1, which.max)], levels = lev, ordered = TRUE)
+}
+
+# Manual prediction for CLMM with random intercept included.
+# For groups not observed in training, uses b_i = 0.
+predict_clmm_re <- function(model, newdata, lev) {
+  fixed_formula <- y ~  agea + health + netustm+hinctnta+eisced+uempla+mainact+gndr+ppltrst+pplfair+pplhlp+trstplt+trstlgl+rlgdgr
+  X <- model.matrix(fixed_formula, data = newdata)
+  beta <- model$beta
+  X <- X[, names(beta), drop = FALSE]
+  eta_fixed <- as.numeric(X %*% beta)
+
+  #re <- ranef(model)$group[, 1]
+  #b <- re[as.character(newdata$group)]
+  re <- ranef(model)$group
+  b <- rep(0, dim(newdata)[1])
+  for(i in 1:dim(newdata)[1]){
+    b[i] <- re[rownames(re) == as.character(newdata$group[i]),]
+  }
+  b[is.na(b)] <- 0
+
+  eta <- eta_fixed + as.numeric(b)
+  theta <- model$Theta
+  K <- length(lev)
+
+  cumprob <- matrix(NA_real_, nrow = nrow(newdata), ncol = K - 1)
+  for (k in 1:(K - 1)) {
+    cumprob[, k] <- plogis(theta[k] - eta)
+  }
+
+  prob <- matrix(NA_real_, nrow = nrow(newdata), ncol = K)
+  prob[, 1] <- cumprob[, 1]
+  if (K > 2) {
+    for (k in 2:(K - 1)) {
+      prob[, k] <- cumprob[, k] - cumprob[, k - 1]
+    }
+  }
+  prob[, K] <- 1 - cumprob[, K - 1]
+
+  prob[prob < 0] <- 0
+  prob <- prob / rowSums(prob)
+  colnames(prob) <- lev
+
+  list(
+    mu = as.data.frame(prob),
+    response = prob_to_class(prob, lev),
+    eta = eta
+  )
+}
+
+# CLM prediction: probabilities and class.
+predict_clm_prob <- function(model, newdata, lev) {
+  
+  fixed_formula <- y ~ agea + health + netustm+hinctnta+eisced+uempla+mainact+gndr+ppltrst+pplfair+pplhlp+trstplt+trstlgl+rlgdgr
+  
+  X <- model.matrix(fixed_formula, data = newdata)
+  beta <- model$beta
+  
+  X <- X[, names(beta), drop = FALSE]
+  eta <- as.numeric(X %*% beta)
+  
+  theta <- model$Theta
+  K <- length(lev)
+  
+  cumprob <- matrix(NA_real_, nrow = nrow(newdata), ncol = K - 1)
+  
+  for (k in 1:(K - 1)) {
+    cumprob[, k] <- plogis(theta[k] - eta)
+  }
+  
+  prob <- matrix(NA_real_, nrow = nrow(newdata), ncol = K)
+  prob[, 1] <- cumprob[, 1]
+  
+  for (k in 2:(K - 1)) {
+    prob[, k] <- cumprob[, k] - cumprob[, k - 1]
+  }
+  
+  prob[, K] <- 1 - cumprob[, K - 1]
+  
+  prob[prob < 0] <- 0
+  prob <- prob / rowSums(prob)
+  colnames(prob) <- lev
+  
+  list(
+    mu = as.data.frame(prob),
+    response = factor(
+      lev[apply(prob, 1, which.max)],
+      levels = lev,
+      ordered = TRUE
+    )
+  )
+}
+
+# Ordinal forest prediction.
+predict_ordforest_prob <- function(model, newdata, lev) {
+  pr <- predict(model, newdata = newdata)
+  mu <- as.data.frame(pr$classprobs)
+  names(mu) <- lev
+  list(
+    mu = mu,
+    response = factor(as.character(pr$ypred), levels = lev, ordered = TRUE)
+  )
+}
+
+# OMERF prediction: uses the custom method, with random effects included.
+predict_omerf_prob <- function(model, y_train, newdata, group_test, lev) {
+  mu <- predict.omerf(model, y_train, newdata, group_test, type = "mu")
+  mu <- as.data.frame(mu)
+  names(mu) <- lev
+  response <- predict.omerf(model, y_train, newdata, group_test, type = "response")
+  response <- factor(as.character(response), levels = lev, ordered = TRUE)
+  list(mu = mu, response = response)
+}
+
+# Square confusion matrix with all levels.
+confusion_full <- function(y_true, y_pred, lev) {
+  tab <- table(
+    factor(y_true, levels = lev, ordered = TRUE),
+    factor(y_pred, levels = lev, ordered = TRUE)
+  )
+  dimnames(tab) <- list(observed = lev, predicted = lev)
+  tab
+}
+
+# Fallback for the ordinal index, if OrdinalClassificationIndex is not available.
+ordinal_index_safe <- function(cm) {
+  if (exists("OrdinalClassificationIndex")) {
+    return(OrdinalClassificationIndex(cm, nrow(cm)))
+  }
+  NA_real_
+}
+
+# Fallback for newindex, if the function is not available.
+newindex_safe <- function(mu, y_num, K) {
+  if (exists("newindex")) {
+    return(newindex(mu, y_num, K)$norm.index)
+  }
+  NA_real_
+}
+
+# Cohen's Weighted Kappa for ordinal response.
+# weights = "quadratic" penalizes distant errors more heavily;
+# use weights = "linear" for a linear penalization.
+weighted_kappa_safe <- function(y_true, y_pred, lev, weights = "quadratic") {
+  y_true <- factor(y_true, levels = lev, ordered = TRUE)
+  y_pred <- factor(y_pred, levels = lev, ordered = TRUE)
+
+  tab <- table(y_true, y_pred)
+  n <- sum(tab)
+  K <- length(lev)
+
+  if (n == 0 || K < 2) {
+    return(NA_real_)
+  }
+
+  d <- abs(row(tab) - col(tab))
+  if (weights == "linear") {
+    W <- d / (K - 1)
+  } else if (weights == "quadratic") {
+    W <- (d / (K - 1))^2
+  } else {
+    stop("weights must be 'linear' or 'quadratic'")
+  }
+
+  O <- tab / n
+  E <- outer(rowSums(tab), colSums(tab)) / n^2
+
+  den <- sum(W * E)
+  if (den == 0) {
+    return(NA_real_)
+  }
+
+  1 - sum(W * O) / den
+}
+
+model_metrics <- function(name, pred, y_true, lev) {
+  y_num <- as.numeric(y_true)
+  pred_num <- as.numeric(pred$response)
+  cm <- confusion_full(y_true, pred$response, lev)
+
+  data.frame(
+    model = name,
+    accuracy = mean(y_num == pred_num),
+    mse = mean((y_num - pred_num)^2),
+    mae = mean(abs(y_num - pred_num)),
+    ordinal_classification_index = ordinal_index_safe(cm),
+    adjusted_rand_index = adj.rand.index(y_num, pred_num),
+    cohen_kappa = cohen.kappa(cbind(y_num, pred_num))$kappa,
+    cohen_weighted_kappa = weighted_kappa_safe(
+      y_true = y_true,
+      y_pred = pred$response,
+      lev = lev,
+      weights = "quadratic"
+    ),
+    new_index = newindex_safe(pred$mu, y_num, length(lev))
+  )
+}
+```
+
+# CLM
+
+The `clm` model uses only fixed effects, so it does not include group effects.
+
+```{r}
+clm.data <- data_train
+
+clm1 <- clm(
+  y ~  agea + health + netustm+hinctnta+eisced+uempla+mainact+gndr+ppltrst+pplfair+pplhlp+trstplt+trstlgl+rlgdgr,
+  data = clm.data,
+  link = "logit"
+)
+summary(clm1)
+
+pred_clm <- predict_clm_prob(clm1, data_test, lev)
+head(pred_clm$mu)
+table(pred_clm$response)
+```
+
+# CLMM
+
+The `clmm` model includes the random intercept for `group`. Prediction is computed manually to include the estimated random effects.
+
+```{r}
+clmm1 <- clmm(
+  y ~  agea + health + netustm+hinctnta+eisced+uempla+mainact+gndr+ppltrst+pplfair+pplhlp+trstplt+trstlgl+rlgdgr+ (1 | group),
+  link = "logit",
+  data = data_train,
+  Hess = TRUE,
+  control = clmm.control(maxLineIter = 200, maxIter = 500, grtol = 1e-4)
+)
+summary(clmm1)
+VarCorr(clmm1)
+
+pred_clmm <- predict_clmm_re(clmm1, data_test, lev)
+head(pred_clmm$mu)
+table(pred_clmm$response)
+```
+
+# Ordinal forest
+
+Uses the same fixed covariates as the formula. Here `group` is not included as a random effect.
+
+```{r}
+ordfor.data <- data_train[, c("y", xnam)]
+ordforest1 <- ordfor(
+  depvar = "y",
+  perffunction = "probability",
+  data = ordfor.data
+)
+
+pred_ordforest <- predict_ordforest_prob(ordforest1, data_test[, xnam], lev)
+head(pred_ordforest$mu)
+table(pred_ordforest$response)
+```
+
+# OMERF
+
+OMERF uses the fixed covariates in the random forest and the random intercept for `group` in the mixed model.
+
+```{r}
+omerf1 <- omerf(
+  y = y,
+  cov = cov,
+  group = group,
+  xnam = xnam,
+  znam = NULL,
+  bizero = NULL,
+  itmax = 100,
+  toll = 0.01
+)
+summary.omerf(omerf1)
+VarCorr(omerf1$clmm.model)
+
+pred_omerf <- predict_omerf_prob(
+  model = omerf1,
+  y_train = y,
+  newdata = data_test[, c(xnam, "group")],
+  group_test = data_test$group,
+  lev = lev
+)
+head(pred_omerf$mu)
+table(pred_omerf$response)
+```
+
+# Random effects
+
+## OMERF
+
+```{r}
+ranef.omerf(omerf1, group)
+```
+
+## CLMM
+
+```{r}
+re_clmm <- ranef(clmm1)$group[, 1]
+
+# THERE IS NO DIRECT WAY TO COMPUTE THE CIs
+#lev_group_clmm <- names(re_clmm)
+#ci <- confint(clmm1, parm = "group", level = 0.95)
+#ci <- ci[lev_group_clmm, , drop = FALSE]
+
+ord.re <- order(re_clmm)
+
+plot(
+  seq_along(re_clmm),
+  re_clmm[ord.re],
+  axes = FALSE,
+  #ylim = range(ci, re_clmm, na.rm = TRUE),
+  xlab = "group",
+  ylab = "group effect"
+)
+
+#axis(1, at = seq_along(re_clmm), labels = lev_group_clmm[ord.re], las = 2)
+axis(1)
+axis(2)
+box()
+
+# segments(
+#   x0 = seq_along(re_clmm),
+#   y0 = ci[ord.re, 1],
+#   x1 = seq_along(re_clmm),
+#   y1 = ci[ord.re, 2]
+# )
+
+abline(h = 0, lty = 2)
+
+
+```
+
+# Performance measures
+
+```{r}
+results <- rbind(
+  model_metrics("clm", pred_clm, y_test_orig, lev),
+  model_metrics("clmm", pred_clmm, y_test_orig, lev),
+  model_metrics("ordforest", pred_ordforest, y_test_orig, lev),
+  model_metrics("omerf", pred_omerf, y_test_orig, lev)
+)
+
+results
+
+results.acc <- setNames(results$accuracy, results$model)
+results.mse <- setNames(results$mse, results$model)
+results.mae <- setNames(results$mae, results$model)
+results.oc <- setNames(results$ordinal_classification_index, results$model)
+results.ari <- setNames(results$adjusted_rand_index, results$model)
+results.ck <- setNames(results$cohen_kappa, results$model)
+results.wk <- setNames(results$cohen_weighted_kappa, results$model)
+results.newi <- setNames(results$new_index, results$model)
+
+results.acc # the higher the better
+results.mse # the lower the better
+results.mae # the lower the better
+results.oc # the closer to 0 the better
+results.ari # the higher the better
+results.ck # the higher the better
+results.wk # the higher the better
+results.newi # the closer to 0 the better
+```
+
+# Confusion matrix
+
+```{r}
+cm_clm <- confusion_full(y_test_orig, pred_clm$response, lev)
+cm_clmm <- confusion_full(y_test_orig, pred_clmm$response, lev)
+cm_ordforest <- confusion_full(y_test_orig, pred_ordforest$response, lev)
+cm_omerf <- confusion_full(y_test_orig, pred_omerf$response, lev)
+
+cm_clm
+cm_clmm
+cm_ordforest
+cm_omerf
+```
+
+# Feature importance OMERF
+
+```{r}
+importance(omerf1$forest.model)
+```
+
+# Feature importance - iml
+
+```{r}
+if (requireNamespace("iml", quietly = TRUE)) {
+  library(iml)
+  library(ggplot2)
+
+  mod_omerf <- Predictor$new(
+    omerf1$forest.model,
+    data = cov,
+    y = omerf1$rf.target
+  )
+  imp_omerf <- FeatureImp$new(mod_omerf, loss = "mse")
+  plot(imp_omerf)
+}
+```
+
+PARTIAL PLOT - iml
+
+```{r}
+mod11 <- Predictor$new(omerf1$forest.model, data = cov)
+effs1 <- FeatureEffects$new(mod11, method = "pdp")
+plot(effs1, nrows = 5, ncols = 4, fixed_y = FALSE)
+```

@@ -1,17 +1,11 @@
 library(simstudy)
 treef=function(a,b,c) {
-	if(a<1) {
-		if(abs(c)<3) y= 2
-		else {
-			if(b<5) y=-2
-			else  y= 20
-		}
-	}
-	else {
-		if(b< -1) y=ifelse(c<0,1,-1)
-		else  y=0
-	}
-	y
+  ifelse(a < 1,
+    ifelse(abs(c) < 3, 2,
+      ifelse(b < 5, -2, 20)),
+    ifelse(b < -1,
+      ifelse(c < 0, 1, -1),
+      0))
 }
 
 
@@ -47,7 +41,7 @@ build.dataset=function (n,sigma, prop) {
   dtObs <- addColumns(gen.obs, dtObs)
   
   gen.z <- defDataAdd(varname = "z",
-                      formula = "0.7*(3 + 7*x1^2 -5*x2 + x2*x3^2) + 0.3*treef(x4,x5,x6) + bi", dist = "nonrandom")
+                      formula = "0.3*(3 + 7*x1^2 -5*x2 + x2*x3^2) + 0.7*treef(x4,x5,x6) + bi", dist = "nonrandom")
   
   dtObs2 <- addColumns(gen.z, dtObs)
   

@@ -12,7 +12,7 @@ knitr::opts_knit$set(root.dir = "D:/magistrale/OMERF/Def_files/dati")
 Read the dataset, create datasets for training and testing and import the omerf function and its methods
 
 ```{r}
-source("OMERF.R")
+source("OMERF_ranger.R")
 source("ord_class_index.R")
 source('index.R')
 studenti <- read.csv("student_ita.csv", sep = ",", dec = ".") #10552
@@ -198,12 +198,12 @@ y_ord_t.1 <- predict(ordforest.1, newdata=data_test)$ypred
 OMERF
 
 ```{r}
-om.0 = omerf(y, cov[, -which(names(cov) %in% c("ESCS"))], group)
+om.0 = omerf(y, cov[, -which(names(cov) %in% c("ESCS"))], group, toll=0.1)
 summary.omerf(om.0)
 om.0$clmm.model$ST
 VarCorr(om.0$clmm.model)
 
-om.1 = omerf(y, cov, group)
+om.1 = omerf(y, cov, group, toll=0.1)
 summary.omerf(om.1)
 om.1$clmm.model$ST
 VarCorr(om.1$clmm.model)
