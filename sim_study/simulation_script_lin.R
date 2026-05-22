@@ -129,16 +129,17 @@ for (nr in 1:nruns) {
   
   # CLM — only x1, x2, x3
   clm.data <- data.frame(covd, y)
-  clm.mod  <- clm(y ~ x1+x2+x3+d2+d3+d4+d5+d6+d7+d8+d9+d10,
+  clm.mod  <- clm(y ~ x1+x2+x3,
                   data = clm.data, link = 'logit')
   
   # Ordinal random forest — only x1, x2, x3
-  for.data   <- data.frame(cov[, c('x1', 'x2', 'x3')], y, gr)
+  for.data   <- data.frame(cov[, c('x1', 'x2', 'x3')], y)
   ordfor.mod <- ordfor(depvar = 'y', perffunction = 'probability', for.data)
   
   # CLMM — only x1, x2, x3
+  clmm.data   <- data.frame(cov[, c('x1', 'x2', 'x3')], y, gr)
   clmm.mod <- clmm(y ~ x1+x2+x3 + (1|gr),
-                   link = 'logit', data = for.data, Hess = TRUE,
+                   link = 'logit', data = clmm.data, Hess = TRUE,
                    control = clmm.control(maxLineIter = 500,
                                           maxIter = 1000, grtol = 1e-3))
   

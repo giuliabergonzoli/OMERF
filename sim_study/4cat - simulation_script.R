@@ -115,7 +115,7 @@ for (nr in 1:nruns) {
   cat(sprintf("Run %d / %d\n", nr, nruns))
 
   # ---------- Train set preparation ----------
-  dati <- build.dataset(n, 5, prop)
+  dati <- build.dataset(nr, 5, prop)
   y    <- factor(dati$y.train)
   cov  <- dati$cov.train
   gr   <- factor(dati$group.train)
@@ -131,17 +131,17 @@ for (nr in 1:nruns) {
 
   # CLM (no random effects, dummies for group)
   clm.data <- data.frame(covd, y)
-  clm.mod  <- clm(y ~ x1+x2+x3+x4+x5+x6+x7+
-                    d2+d3+d4+d5+d6+d7+d8+d9+d10+d11+d12+d13+d14+d15,
+  clm.mod  <- clm(y ~ x1+x2+x3+x4+x5+x6+x7,
                   data = clm.data, link = 'logit')   # d1: baseline group
 
   # Ordinal random forest
-  for.data   <- data.frame(cov, y, gr)
+  for.data   <- data.frame(cov, y)
   ordfor.mod <- ordfor(depvar = 'y', perffunction = 'probability', for.data)
 
   # CLMM (random intercept only)
+  clmm.data   <- data.frame(cov, y, gr)
   clmm.mod <- clmm(y ~ x1+x2+x3+x4+x5+x6+x7 + (1|gr),
-                   link = 'logit', data = for.data, Hess = TRUE,
+                   link = 'logit', data = clmm.data, Hess = TRUE,
                    control = clmm.control(maxLineIter = 500,
                                           maxIter = 1000, grtol = 1e-3))
 
