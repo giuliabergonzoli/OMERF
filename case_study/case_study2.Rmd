@@ -29,7 +29,7 @@ library(ranger)
 
 #set.seed(1999)
 
-dati <- readRDS("clean_data")
+dati <- read.csv("case_study2.csv")
 
 # Factors
 factor_vars <- c("mainact", "gndr", "cntry")
